@@ -210,8 +210,9 @@ def submit_ot_response():
 @app.route('/admin/force-create-tables')
 def force_create_tables():
     try:
-        db.create_all()
-        return "Tables created successfully! You can remove this route now."
+        db.drop_all()  # <-- (1) ลบตารางเก่าทั้งหมดทิ้ง
+        db.create_all() # <-- (2) สร้างตารางใหม่ทั้งหมด (ตามโครงสร้างใหม่)
+        return "Tables dropped and recreated successfully! (Schema is updated)"
     except Exception as e:
         return f"An error occurred: {str(e)}"
 
