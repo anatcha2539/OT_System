@@ -216,9 +216,6 @@ def force_create_tables():
 
 
 # <<< (ใหม่) หน้าสำหรับสร้างตาราง OT >>>
-@app.route('/admin/create')
-def admin_create_page():
-
 # --- (ส่วนของ Admin) ---
 # (ส่วนนี้ถูกต้องสมบูรณ์ ไม่มีการแก้ไข)
 
