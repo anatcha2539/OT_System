@@ -65,6 +65,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     full_name = db.Column(db.String(120), nullable=False)
+    line_user_id = db.Column(db.String(100), nullable=True, unique=True, index=True)
     def __repr__(self):
         return f'<User {self.full_name}>'
 
@@ -228,27 +229,40 @@ def admin_users_page():
         # ถ้าตารางยังไม่ถูกสร้าง
         return f"เกิดข้อผิดพลาดในการโหลดข้อมูลผู้ใช้: {str(e)}"
 
-# (ใหม่) API สำหรับเพิ่ม User
+# (อัปเกรด) API สำหรับเพิ่ม User
 @app.route('/admin/add-user', methods=['POST'])
 def add_user():
     try:
         username = request.form['username']
         full_name = request.form['full_name']
-        
+        line_user_id = request.form.get('line_user_id', None) # <-- (ใหม่)
+
+        # (ใหม่) ถ้ากรอก line_user_id มา (และไม่เว้นว่าง) ให้เช็กว่าซ้ำหรือไม่
+        if line_user_id and line_user_id.strip() != "":
+            existing_line_id = User.query.filter_by(line_user_id=line_user_id).first()
+            if existing_line_id:
+                return f"เกิดข้อผิดพลาด: LINE User ID ({line_user_id}) นี้มีผู้ใช้งานแล้ว"
+        else:
+            line_user_id = None # ถ้าส่งค่าว่างมา ให้เก็บเป็น None
+
         # ตรวจสอบว่า username ซ้ำหรือไม่
         existing_user = User.query.filter_by(username=username).first()
         if existing_user:
             return "เกิดข้อผิดพลาด: Username นี้มีผู้ใช้งานแล้ว"
-            
-        new_user = User(username=username, full_name=full_name)
+
+        new_user = User(
+            username=username, 
+            full_name=full_name, 
+            line_user_id=line_user_id # <-- (ใหม่)
+        )
         db.session.add(new_user)
         db.session.commit()
-        
+
         return redirect(url_for('admin_users_page'))
     except Exception as e:
         db.session.rollback()
         return f"เกิดข้อผิดพลาด: {str(e)}"
-
+    
 # (ใหม่) API สำหรับลบ User
 @app.route('/admin/delete-user/<int:user_id>', methods=['POST'])
 def delete_user(user_id):
@@ -272,26 +286,43 @@ def delete_user(user_id):
         db.session.rollback()
         return f"เกิดข้อผิดพลาด: {str(e)}"
 
-# (ใหม่) API สำหรับแก้ไขชื่อ User (รับ JSON จาก JavaScript)
+# (อัปเกรด) API สำหรับแก้ไขชื่อ User และ LINE ID (รับ JSON จาก JavaScript)
 @app.route('/admin/edit-user/<int:user_id>', methods=['POST'])
 def edit_user(user_id):
     try:
         data = request.json
         new_full_name = data.get('full_name')
+        new_line_user_id = data.get('line_user_id') # <-- (ใหม่)
+
+        user = User.query.get_or_404(user_id)
 
         if not new_full_name:
             return jsonify({"error": "ไม่พบชื่อใหม่"}), 400
 
-        user = User.query.get_or_404(user_id)
         user.full_name = new_full_name
+
+        # (ใหม่) ตรวจสอบ line_user_id
+        if new_line_user_id and new_line_user_id.strip() != "":
+            # ตรวจสอบว่า ID ใหม่นี้ซ้ำกับคนอื่นหรือไม่
+            existing_line_id = User.query.filter(
+                User.line_user_id == new_line_user_id,
+                User.id != user_id # ต้องไม่ซ้ำกับคนอื่น (ที่ไม่ใช่ตัวเอง)
+            ).first()
+            if existing_line_id:
+                return jsonify({"error": f"LINE User ID ({new_line_user_id}) นี้ ถูกใช้โดยผู้ใช้อื่นแล้ว"}), 400
+
+            user.line_user_id = new_line_user_id
+        else:
+            # ถ้าส่งค่าว่างมา (เช่น ลบ ID ออก)
+            user.line_user_id = None
+
         db.session.commit()
-        
+
         return jsonify({"message": "success"}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-
-
+    
 # (ใหม่) API สำหรับลบตาราง OT และการตอบรับที่เกี่ยวข้องทั้งหมด
 @app.route('/admin/delete-schedule/<int:schedule_id>', methods=['POST'])
 def delete_schedule(schedule_id):
@@ -326,7 +357,7 @@ def admin_create_page():
 def create_schedule():
     data = request.json
     ot_date_str = data.get('date')
-    primary_user_ids = data.get('user_ids', [])
+    primary_user_ids = data.get('user_ids', []) # นี่คือ list ของ ID (ตัวเลข)
 
     if not ot_date_str or not primary_user_ids:
         return jsonify({"error": "กรุณาเลือกวันที่และพนักงานอย่างน้อย 1 คน"}), 400
@@ -338,40 +369,84 @@ def create_schedule():
         if existing_schedule:
             return jsonify({"error": f"มีตาราง OT สำหรับวันที่ {ot_date_str} อยู่แล้ว"}), 400
 
+        # 1. สร้าง Schedule
         new_schedule = OTSchedule(ot_date=ot_date)
         db.session.add(new_schedule)
-        db.session.commit() 
+        db.session.commit() # Commit เพื่อให้ได้ new_schedule.id
 
+        # 2. สร้าง OTResponse และดึงข้อมูล User ที่มี LINE ID
         created_responses = []
-        user_map = {u.id: u.full_name for u in User.query.filter(User.id.in_(primary_user_ids)).all()}
-        
+
+        # ดึง object User ทั้งหมดที่ถูกเลือก
+        selected_users = User.query.filter(User.id.in_(primary_user_ids)).all()
+        user_map = {u.id: u for u in selected_users} # สร้าง map เพื่อให้ดึงข้อมูลง่าย
+
         for user_id in primary_user_ids:
             response = OTResponse(schedule_id=new_schedule.id, primary_user_id=user_id)
             db.session.add(response)
             created_responses.append(response)
-        
-        db.session.commit() 
 
-        links_for_admin = []
+        db.session.commit() # Commit responses ทั้งหมด
+
+        # 3. (อัปเกรด) ส่ง LINE Push Message หาพนักงาน "แต่ละคน"
+        links_for_admin_fallback = [] # ลิงก์สำรองให้ Admin (เผื่อพนักงานไม่มี LINE ID)
+        names_list_for_group = [] # รายชื่อสำหรับส่งเข้ากลุ่ม
+        users_sent_count = 0
+
         for resp in created_responses:
-            user_name = user_map.get(resp.primary_user_id, "(ไม่พบชื่อ)")
-            links_for_admin.append({
-                "name": user_name,
-                "link": url_for('show_survey', token=resp.token) 
-            })
+            # ดึงข้อมูล User จาก map
+            user = user_map.get(resp.primary_user_id)
+            if not user:
+                continue # ถ้าหา user ไม่เจอ (ซึ่งไม่ควรเกิด)
 
-        names_list = "\n".join([f"- {name}" for name in user_map.values()])
+            names_list_for_group.append(f"- {user.full_name}")
+            # สร้างลิงก์ Survey ส่วนตัว
+            survey_link = url_for('show_survey', token=resp.token, _external=True)
+
+            if user.line_user_id:
+                # (ใหม่) ถ้าพนักงานคนนี้มี LINE ID, ส่งหาเขาโดยตรง
+                try:
+                    message_text = (
+                        f"สวัสดีครับ คุณ {user.full_name},\n\n"
+                        f"คุณได้รับสิทธิ์ OT สำหรับวันที่ {ot_date.strftime('%d/%m/%Y')}\n"
+                        f"กรุณากดยืนยัน/สละสิทธิ์ ภายในลิงก์นี้:\n\n"
+                        f"{survey_link}"
+                    )
+                    message = TextSendMessage(text=message_text)
+                    line_bot_api.push_message(user.line_user_id, messages=message)
+                    users_sent_count += 1
+                except Exception as e:
+                    print(f"!!! ส่ง LINE หา {user.full_name} ({user.line_user_id}) ไม่สำเร็จ: {e}")
+                    # ถ้าส่งไม่สำเร็จ ให้ส่งลิงก์กลับไปให้ Admin แทน
+                    links_for_admin_fallback.append({
+                        "name": f"{user.full_name} (ส่ง LINE ไม่สำเร็จ)",
+                        "link": survey_link
+                    })
+            else:
+                # (ใหม่) ถ้าพนักงานไม่มี LINE ID, ส่งลิงก์กลับไปให้ Admin
+                links_for_admin_fallback.append({
+                    "name": f"{user.full_name} (ไม่มี LINE ID)",
+                    "link": survey_link
+                })
+
+        # 4. (อัปเกรด) ส่งข้อความ "สรุป" เข้ากลุ่ม LINE หลัก (กลุ่ม Admin)
+        names_list_str = "\n".join(names_list_for_group)
         message_to_group = (
             f"📢 สร้างตาราง OT ใหม่ 📢\n"
             f"วันที่: {ot_date.strftime('%d/%m/%Y')}\n\n"
-            f"ผู้มีสิทธิ์หลัก:\n{names_list}\n\n"
-            f"ระบบจะส่งลิงก์สำรวจให้ Admin เพื่อแจกจ่ายต่อไป"
+            f"ผู้มีสิทธิ์หลัก:\n{names_list_str}\n\n"
+            f"✅ ระบบได้ส่งลิงก์ Survey ให้พนักงานแล้ว {users_sent_count} คน"
         )
+        # ถ้ามีลิงก์ที่ส่งไม่สำเร็จ ให้แจ้ง Admin ด้วย
+        if links_for_admin_fallback:
+            message_to_group += "\n\n🚨 (Admin โปรดแจกจ่ายลิงก์ที่เหลือเอง)"
+
         send_line_push_message(message_to_group)
-        
+
+        # 5. ส่งข้อมูลกลับหน้าเว็บ
         return jsonify({
             "message": "สร้างตาราง OT สำเร็จ!",
-            "links": links_for_admin,
+            "links": links_for_admin_fallback, # ส่งเฉพาะลิงก์ที่ส่งไม่สำเร็จ
             "schedule_id": new_schedule.id
         }), 201
 
