@@ -18,6 +18,12 @@
 </head>
 <body>
     <h1>สร้างตาราง OT ใหม่</h1>
+    <nav>
+    <a href="{{ url_for('admin_dashboard') }}">Dashboard</a> |
+    <a href="{{ url_for('admin_create_page') }}">สร้างตาราง OT</a> |
+    <strong><a href="{{ url_for('admin_users_page') }}">จัดการผู้ใช้งาน</a></strong>
+</nav>
+    
     <p>เลือกวันที่ และเลือกพนักงานที่เป็น "สิทธิ์หลัก" สำหรับวันนั้น</p>
     
     <form id="create-ot-form">

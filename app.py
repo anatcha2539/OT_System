@@ -215,6 +215,84 @@ def force_create_tables():
         return f"An error occurred: {str(e)}"
 
 
+# --- (ส่วนของ Admin) ---
+
+# (ใหม่) หน้าสำหรับจัดการ User (แสดง, เพิ่ม, ลบ, แก้ไข)
+@app.route('/admin/users')
+def admin_users_page():
+    try:
+        all_users = User.query.order_by(User.full_name).all()
+        return render_template('admin_users.html', users=all_users)
+    except Exception as e:
+        # นี่คือจุดที่เราจะเจอ Error "relation 'user' does not exist"
+        # ถ้าตารางยังไม่ถูกสร้าง
+        return f"เกิดข้อผิดพลาดในการโหลดข้อมูลผู้ใช้: {str(e)}"
+
+# (ใหม่) API สำหรับเพิ่ม User
+@app.route('/admin/add-user', methods=['POST'])
+def add_user():
+    try:
+        username = request.form['username']
+        full_name = request.form['full_name']
+        
+        # ตรวจสอบว่า username ซ้ำหรือไม่
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            return "เกิดข้อผิดพลาด: Username นี้มีผู้ใช้งานแล้ว"
+            
+        new_user = User(username=username, full_name=full_name)
+        db.session.add(new_user)
+        db.session.commit()
+        
+        return redirect(url_for('admin_users_page'))
+    except Exception as e:
+        db.session.rollback()
+        return f"เกิดข้อผิดพลาด: {str(e)}"
+
+# (ใหม่) API สำหรับลบ User
+@app.route('/admin/delete-user/<int:user_id>', methods=['POST'])
+def delete_user(user_id):
+    try:
+        # (สำคัญ) ตรวจสอบว่า User นี้ติดพันในตาราง OT หรือไม่
+        has_responses = OTResponse.query.filter(
+            (OTResponse.primary_user_id == user_id) | 
+            (OTResponse.delegated_to_user_id == user_id)
+        ).first()
+        
+        if has_responses:
+            return "ไม่สามารถลบผู้ใช้นี้ได้: ผู้ใช้มีข้อมูลผูกพันอยู่ในตาราง OT ที่สร้างไปแล้ว"
+
+        # ถ้าไม่ติดพัน ก็ลบได้
+        user = User.query.get_or_404(user_id)
+        db.session.delete(user)
+        db.session.commit()
+        
+        return redirect(url_for('admin_users_page'))
+    except Exception as e:
+        db.session.rollback()
+        return f"เกิดข้อผิดพลาด: {str(e)}"
+
+# (ใหม่) API สำหรับแก้ไขชื่อ User (รับ JSON จาก JavaScript)
+@app.route('/admin/edit-user/<int:user_id>', methods=['POST'])
+def edit_user(user_id):
+    try:
+        data = request.json
+        new_full_name = data.get('full_name')
+
+        if not new_full_name:
+            return jsonify({"error": "ไม่พบชื่อใหม่"}), 400
+
+        user = User.query.get_or_404(user_id)
+        user.full_name = new_full_name
+        db.session.commit()
+        
+        return jsonify({"message": "success"}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+
 # <<< (ใหม่) หน้าสำหรับสร้างตาราง OT >>>
 # --- (ส่วนของ Admin) ---
 # (ส่วนนี้ถูกต้องสมบูรณ์ ไม่มีการแก้ไข)
