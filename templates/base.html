@@ -24,22 +24,37 @@
         <span class="navbar-toggler-icon"></span>
       </button>
       <div class="collapse navbar-collapse" id="navbarNav">
-        <ul class="navbar-nav ms-auto">
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
-              <i class="bi bi-bar-chart-fill"></i> Dashboard
-            </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('admin_create_page') }}">
-              <i class="bi bi-plus-circle-fill"></i> สร้างตาราง OT
-            </a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('admin_users_page') }}">
-              <i class="bi bi-people-fill"></i> จัดการพนักงาน
-            </a>
-          </li>
+        <ul class="navbar-nav ms-auto"> 
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                <i class="bi bi-bar-chart-fill"></i> Dashboard
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('admin_create_page') }}">
+                <i class="bi bi-plus-circle-fill"></i> สร้างตาราง OT
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="{{ url_for('admin_users_page') }}">
+                <i class="bi bi-people-fill"></i> จัดการพนักงาน
+                </a>
+            </li>
+            
+            <li class="nav-item dropdown">
+                <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                <i class="bi bi-person-circle"></i>
+                {{ current_user.full_name }} (Admin)
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end">
+                <li>
+                    <a class="dropdown-item text-danger" href="{{ url_for('logout') }}">
+                    <i class="bi bi-box-arrow-right"></i>
+                    ออกจากระบบ
+                    </a>
+                </li>
+                </ul>
+            </li>
         </ul>
       </div>
     </div>

@@ -1,49 +1,77 @@
-# app.py (เวอร์ชันแก้ไขสมบูรณ์ 25/10/2025)
 import os
 import uuid
-# FIX 2.1: เพิ่ม redirect ไว้ที่ import หลัก
-from flask import Flask, request, jsonify, render_template, url_for, redirect
+# FIX 2.1: เพิ่ม redirect, abort ไว้ที่ import หลัก
+from flask import Flask, request, jsonify, render_template, url_for, redirect, abort
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, date
 
+# --- (ใหม่) 1. Import Library ของ Flask-Login และการเข้ารหัส ---
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+
 # --- 1. Import Library ของ LINE Bot SDK ---
+# (ใช้ v3 สำหรับ Webhook)
+from linebot.v3.webhook import WebhookHandler
+from linebot.v3.exceptions import InvalidSignatureError
+from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage as V3TextMessage
+from linebot.v3.webhooks import MessageEvent, TextMessageContent
+# (ใช้ v1/v2 สำหรับ Push Message - โค้ดเดิมของคุณ)
 from linebot import LineBotApi
 from linebot.models import TextSendMessage
 from linebot.exceptions import LineBotApiError
+
 
 # --- 1. ตั้งค่าพื้นฐาน ---
 app = Flask(__name__)
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 # FIX 3.1: ใช้ Environment Variable สำหรับ DATABASE_URL
-# (โค้ดของคุณจะ "สะอาด" ไม่มีรหัสผ่าน)
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
+# --- (ใหม่) 2. ตั้งค่า Flask-Login ---
+# (สำคัญมาก) เราจะใช้ Environment Variable ตัวใหม่สำหรับ Secret Key
+app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY') 
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+# ถ้า user พยายามเข้าหน้า /admin แต่ยังไม่ login ให้เด้งไปที่ route (function) ชื่อ 'login'
+login_manager.login_view = 'login' 
+login_manager.login_message = "กรุณาเข้าสู่ระบบเพื่อใช้งานหน้านี้"
+login_manager.login_message_category = "warning" # (ใช้กับ Bootstrap)
+
+@login_manager.user_loader
+def load_user(user_id):
+    # Flask-Login จะใช้ฟังก์ชันนี้ดึงข้อมูล user จาก ID ที่เก็บใน session
+    return User.query.get(int(user_id))
+# --- (สิ้นสุดส่วนที่เพิ่มใหม่) ---
+
+
 # FIX 1: ย้าย db.create_all() มาไว้ตรงนี้
-# (เพื่อให้ Gunicorn เรียกใช้งานตอนเริ่มเซิร์ฟเวอร์)
 with app.app_context():
     db.create_all()
 
 # FIX 3.2: ใช้ Environment Variables สำหรับ LINE Tokens
 YOUR_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 YOUR_TARGET_GROUP_ID = os.environ.get('LINE_TARGET_GROUP_ID')
+# (ใหม่) เพิ่ม Channel Secret และ Handler สำหรับ Webhook
+YOUR_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
+handler = WebhookHandler(YOUR_CHANNEL_SECRET)
 # ===================================================
 
-# --- 1.2 สร้าง Instance ของ LineBotApi ---
+# --- 1.2 สร้าง Instance ของ LineBotApi (v1/v2) ---
 try:
     line_bot_api = LineBotApi(YOUR_CHANNEL_ACCESS_TOKEN)
 except Exception as e:
-    print(f"!!! Error initializing LineBotApi: {e}")
+    print(f"!!! Error initializing LineBotApi (v1): {e}")
     line_bot_api = None
 
-# --- 1.5 ฟังก์ชันสำหรับส่ง LINE (Messaging API) ---
+# --- 1.5 ฟังก์ชันสำหรับส่ง LINE (Messaging API - v1/v2) ---
 def send_line_push_message(message_text):
     if not line_bot_api:
-        print("ไม่สามารถส่ง LINE ได้: LineBotApi ไม่ได้ถูกตั้งค่า")
+        print("ไม่สามารถส่ง LINE ได้: LineBotApi (v1) ไม่ได้ถูกตั้งค่า")
         return False
-    # (ปรับปรุงเล็กน้อย) เช็กว่ามี ID กลุ่มหรือไม่
     if not YOUR_TARGET_GROUP_ID:
         print("ไม่สามารถส่ง LINE ได้: กรุณาตั้งค่า LINE_TARGET_GROUP_ID")
         return False
@@ -56,19 +84,75 @@ def send_line_push_message(message_text):
         print(f"ส่ง LINE Push Message ไม่สำเร็จ: {e.code} {e.message}")
         return False
     except Exception as e:
-        print(f"เกิดข้อผิดพลาดในการส่ง LINE: {e}")
+        print(f"เกิดข้อผิดพลาดในการส่ง LINE (v1): {e}")
         return False
 
+# --- (ใหม่) 1.6 Webhook สำหรับ "รับ" ข้อความจาก LINE (v3) ---
+@app.route("/callback", methods=['POST'])
+def callback():
+    signature = request.headers['X-Line-Signature']
+    body = request.get_data(as_text=True)
+    app.logger.info("Request body: " + body)
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
+        app.logger.info("Invalid signature. Please check your channel access token/channel secret.")
+        abort(400)
+    return 'OK'
+
+@handler.add(MessageEvent, message=TextMessageContent)
+def handle_message(event):
+    user_id = event.source.user_id
+    text = event.message.text
+    
+    # (สำคัญ) พิมพ์ User ID ออกไปที่ Logs ของ Render
+    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    print(f"!!! USER ID ที่คุณตามหาคือ: {user_id}")
+    print(f"!!! เขาพิมพ์ว่า: {text}")
+    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
+    # (Optional) พยายามตอบกลับไปหาเขา
+    try:
+        with ApiClient(Configuration(access_token=YOUR_CHANNEL_ACCESS_TOKEN)) as api_client:
+            line_bot_api_v3 = MessagingApi(api_client)
+            line_bot_api_v3.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[V3TextMessage(text=f'นี่คือ User ID ของคุณ:\n{user_id}\n\nกรุณาคัดลอก ID นี้ไปให้ Admin ครับ')]
+                )
+            )
+    except Exception as e:
+        print(f"!!! ไม่สามารถ 'ตอบกลับ' หา {user_id} ได้ (v3): {e}")
+
+
 # --- 2. สร้างโมเดลฐานข้อมูล ---
-# (ส่วนนี้ถูกต้องสมบูรณ์ ไม่มีการแก้ไข)
-class User(db.Model):
+
+# (ใหม่) อัปเกรด User Model ให้รองรับการ Login
+class User(db.Model, UserMixin): # (1. เพิ่ม UserMixin)
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     full_name = db.Column(db.String(120), nullable=False)
     line_user_id = db.Column(db.String(100), nullable=True, unique=True, index=True)
+    
+    # --- (ส่วนที่เพิ่มใหม่) ---
+    password_hash = db.Column(db.String(256), nullable=True) # (2. เพิ่ม hash รหัสผ่าน)
+    is_admin = db.Column(db.Boolean, default=False)        # (3. เพิ่มสถานะ Admin)
+
+    # (4. ฟังก์ชันสำหรับตั้งรหัสผ่าน)
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    # (5. ฟังก์ชันสำหรับเช็กรหัสผ่าน)
+    def check_password(self, password):
+        if not self.password_hash:
+            return False
+        return check_password_hash(self.password_hash, password)
+    # --- (สิ้นสุดส่วนที่เพิ่มใหม่) ---
+
     def __repr__(self):
         return f'<User {self.full_name}>'
 
+# (Class OTSchedule และ OTResponse เหมือนเดิม ไม่ต้องแก้)
 class OTSchedule(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ot_date = db.Column(db.Date, nullable=False, unique=True)
@@ -92,19 +176,73 @@ class OTResponse(db.Model):
 # FIX 2.2: วาง Route / (Homepage) ไว้ที่นี่
 @app.route('/')
 def index():
-    # เมื่อคนเข้าหน้าหลัก ให้ส่งไปหน้า /admin อัตโนมัติ
-    return redirect(url_for('admin_dashboard'))
+    # (อัปเกรด) ถ้า login แล้ว ให้ไป dashboard, ถ้ายัง ให้ไป login
+    if current_user.is_authenticated:
+        return redirect(url_for('admin_dashboard'))
+    return redirect(url_for('login'))
 
-# (Endpoint /survey/... และ /api/survey-data/... เหมือนเดิม)
+# --- (ใหม่) 3.1 สร้าง Route สำหรับ Login / Logout ---
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('admin_dashboard'))
+
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+
+        if user and user.is_admin and user.check_password(password):
+            login_user(user)
+            return redirect(url_for('admin_dashboard'))
+        else:
+            return render_template('login.html', error="Username หรือ Password ไม่ถูกต้อง (หรือคุณไม่ใช่ Admin)")
+
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required 
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+# (สำคัญ!) Route ลับสำหรับ "สร้าง Admin คนแรก"
+@app.route('/admin/create-first-admin')
+def create_first_admin():
+    try:
+        admin_user = User.query.filter_by(username='admin').first()
+        if not admin_user:
+            admin_user = User(
+                username='admin', 
+                full_name='ผู้ดูแลระบบ', 
+                is_admin=True
+            )
+            admin_user.set_password('password123') 
+            db.session.add(admin_user)
+            db.session.commit()
+            return "<h1>สร้าง Admin User (username: admin, pass: password123) สำเร็จ!</h1>"
+        else:
+            admin_user.set_password('password123')
+            admin_user.is_admin = True
+            db.session.commit()
+            return "<h1>มี User 'admin' อยู่แล้ว -> อัปเดตสิทธิ์และรีเซ็ตรหัสผ่านเป็น 'password123' สำเร็จ!</h1>"
+    except Exception as e:
+        db.session.rollback()
+        return f"เกิดข้อผิดพลาด: {e}"
+# --- (สิ้นสุดส่วน Login) ---
+
+
+# --- 3.2 ส่วนของ Survey (User ทั่วไป ไม่ต้อง Login) ---
 @app.route('/survey/<string:token>')
 def show_survey(token):
     response = OTResponse.query.filter_by(token=token).first_or_404()
     return render_template('survey.html', 
                            response_id=response.id, 
                            user_name=response.primary_user.full_name,
-                           ot_date=response.schedule.ot_date, # ส่งเป็น object date
+                           ot_date=response.schedule.ot_date, 
                            current_status=response.response_status 
-                          )
+                           )
 
 @app.route('/api/survey-data/<int:response_id>')
 def get_survey_data(response_id):
@@ -133,7 +271,6 @@ def get_survey_data(response_id):
         "other_users": users_list
     })
 
-# (Endpoint /submit-ot-response เหมือนเดิม)
 @app.route('/submit-ot-response', methods=['POST'])
 def submit_ot_response():
     data = request.json
@@ -204,49 +341,46 @@ def submit_ot_response():
         return jsonify({"error": str(e)}), 500
 
 
-# FIX 2.3: ลบส่วนที่ซ้ำซ้อน (import redirect, route /survey) ที่เคยอยู่ตรงนี้ออกไป
+# --- 3.3 ส่วนของ Admin (ต้อง Login) ---
 
-# <<< (ชั่วคราว) Route ลับสำหรับสร้างตาราง DB >>>
 @app.route('/admin/force-create-tables')
+@login_required
 def force_create_tables():
+    if not current_user.is_admin: abort(403)
     try:
-        db.drop_all()  # <-- (1) ลบตารางเก่าทั้งหมดทิ้ง
-        db.create_all() # <-- (2) สร้างตารางใหม่ทั้งหมด (ตามโครงสร้างใหม่)
+        db.drop_all()
+        db.create_all()
         return "Tables dropped and recreated successfully! (Schema is updated)"
     except Exception as e:
         return f"An error occurred: {str(e)}"
 
-
-# --- (ส่วนของ Admin) ---
-
-# (ใหม่) หน้าสำหรับจัดการ User (แสดง, เพิ่ม, ลบ, แก้ไข)
 @app.route('/admin/users')
+@login_required
 def admin_users_page():
+    if not current_user.is_admin: abort(403)
     try:
-        all_users = User.query.order_by(User.full_name).all()
+        # (อัปเกรด) ดึง user ทั้งหมด แต่ไม่แสดง "ผู้ดูแลระบบ" (admin)
+        all_users = User.query.filter(User.is_admin == False).order_by(User.full_name).all()
         return render_template('admin_users.html', users=all_users)
     except Exception as e:
-        # นี่คือจุดที่เราจะเจอ Error "relation 'user' does not exist"
-        # ถ้าตารางยังไม่ถูกสร้าง
         return f"เกิดข้อผิดพลาดในการโหลดข้อมูลผู้ใช้: {str(e)}"
 
-# (อัปเกรด) API สำหรับเพิ่ม User
 @app.route('/admin/add-user', methods=['POST'])
+@login_required
 def add_user():
+    if not current_user.is_admin: abort(403)
     try:
         username = request.form['username']
         full_name = request.form['full_name']
-        line_user_id = request.form.get('line_user_id', None) # <-- (ใหม่)
+        line_user_id = request.form.get('line_user_id', None) 
 
-        # (ใหม่) ถ้ากรอก line_user_id มา (และไม่เว้นว่าง) ให้เช็กว่าซ้ำหรือไม่
         if line_user_id and line_user_id.strip() != "":
             existing_line_id = User.query.filter_by(line_user_id=line_user_id).first()
             if existing_line_id:
                 return f"เกิดข้อผิดพลาด: LINE User ID ({line_user_id}) นี้มีผู้ใช้งานแล้ว"
         else:
-            line_user_id = None # ถ้าส่งค่าว่างมา ให้เก็บเป็น None
+            line_user_id = None 
 
-        # ตรวจสอบว่า username ซ้ำหรือไม่
         existing_user = User.query.filter_by(username=username).first()
         if existing_user:
             return "เกิดข้อผิดพลาด: Username นี้มีผู้ใช้งานแล้ว"
@@ -254,7 +388,8 @@ def add_user():
         new_user = User(
             username=username, 
             full_name=full_name, 
-            line_user_id=line_user_id # <-- (ใหม่)
+            line_user_id=line_user_id,
+            is_admin=False # (ใหม่) พนักงานที่เพิ่มใหม่จะเป็น Non-Admin เสมอ
         )
         db.session.add(new_user)
         db.session.commit()
@@ -264,11 +399,11 @@ def add_user():
         db.session.rollback()
         return f"เกิดข้อผิดพลาด: {str(e)}"
     
-# (ใหม่) API สำหรับลบ User
 @app.route('/admin/delete-user/<int:user_id>', methods=['POST'])
+@login_required
 def delete_user(user_id):
+    if not current_user.is_admin: abort(403)
     try:
-        # (สำคัญ) ตรวจสอบว่า User นี้ติดพันในตาราง OT หรือไม่
         has_responses = OTResponse.query.filter(
             (OTResponse.primary_user_id == user_id) | 
             (OTResponse.delegated_to_user_id == user_id)
@@ -277,8 +412,12 @@ def delete_user(user_id):
         if has_responses:
             return "ไม่สามารถลบผู้ใช้นี้ได้: ผู้ใช้มีข้อมูลผูกพันอยู่ในตาราง OT ที่สร้างไปแล้ว"
 
-        # ถ้าไม่ติดพัน ก็ลบได้
         user = User.query.get_or_404(user_id)
+        
+        # (ใหม่) ป้องกันการลบ Admin Account
+        if user.is_admin:
+            return "ไม่สามารถลบผู้ดูแลระบบได้"
+            
         db.session.delete(user)
         db.session.commit()
         
@@ -287,13 +426,14 @@ def delete_user(user_id):
         db.session.rollback()
         return f"เกิดข้อผิดพลาด: {str(e)}"
 
-# (อัปเกรด) API สำหรับแก้ไขชื่อ User และ LINE ID (รับ JSON จาก JavaScript)
 @app.route('/admin/edit-user/<int:user_id>', methods=['POST'])
+@login_required
 def edit_user(user_id):
+    if not current_user.is_admin: abort(403)
     try:
         data = request.json
         new_full_name = data.get('full_name')
-        new_line_user_id = data.get('line_user_id') # <-- (ใหม่)
+        new_line_user_id = data.get('line_user_id') 
 
         user = User.query.get_or_404(user_id)
 
@@ -302,110 +442,91 @@ def edit_user(user_id):
 
         user.full_name = new_full_name
 
-        # (ใหม่) ตรวจสอบ line_user_id
         if new_line_user_id and new_line_user_id.strip() != "":
-            # ตรวจสอบว่า ID ใหม่นี้ซ้ำกับคนอื่นหรือไม่
             existing_line_id = User.query.filter(
                 User.line_user_id == new_line_user_id,
-                User.id != user_id # ต้องไม่ซ้ำกับคนอื่น (ที่ไม่ใช่ตัวเอง)
+                User.id != user_id 
             ).first()
             if existing_line_id:
                 return jsonify({"error": f"LINE User ID ({new_line_user_id}) นี้ ถูกใช้โดยผู้ใช้อื่นแล้ว"}), 400
-
             user.line_user_id = new_line_user_id
         else:
-            # ถ้าส่งค่าว่างมา (เช่น ลบ ID ออก)
             user.line_user_id = None
 
         db.session.commit()
-
         return jsonify({"message": "success"}), 200
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
     
-# (ใหม่) API สำหรับลบตาราง OT และการตอบรับที่เกี่ยวข้องทั้งหมด
 @app.route('/admin/delete-schedule/<int:schedule_id>', methods=['POST'])
+@login_required
 def delete_schedule(schedule_id):
+    if not current_user.is_admin: abort(403)
     try:
-        # 1. ค้นหาตาราง OT ที่ต้องการลบ
         schedule = OTSchedule.query.get_or_404(schedule_id)
-        
-        # 2. (สำคัญมาก) ลบการตอบรับ (OTResponse) ทั้งหมด
-        #    ที่ผูกอยู่กับตารางนี้ก่อน (ไม่อย่างนั้น DB จะ error)
         OTResponse.query.filter_by(schedule_id=schedule_id).delete()
-        
-        # 3. เมื่อลูก (Response) ถูกลบหมดแล้ว ก็ลบแม่ (Schedule)
         db.session.delete(schedule)
-        
-        # 4. ยืนยันการเปลี่ยนแปลง
         db.session.commit()
-        
-        # กลับไปหน้า Dashboard
         return redirect(url_for('admin_dashboard'))
-        
     except Exception as e:
         db.session.rollback()
         return f"เกิดข้อผิดพลาดในการลบตาราง: {str(e)}"
 
 
 @app.route('/admin/create')
+@login_required
 def admin_create_page():
-    all_users = User.query.order_by(User.full_name).all()
+    if not current_user.is_admin: abort(403)
+    # (อัปเกรด) ดึงเฉพาะ User ที่ไม่ใช่ Admin มาให้เลือก
+    all_users = User.query.filter_by(is_admin=False).order_by(User.full_name).all()
     return render_template('create_schedule.html', users=all_users)
 
 @app.route('/api/create-schedule', methods=['POST'])
+@login_required
 def create_schedule():
+    if not current_user.is_admin: abort(403)
     data = request.json
     ot_date_str = data.get('date')
-    primary_user_ids = data.get('user_ids', []) # นี่คือ list ของ ID (ตัวเลข)
+    primary_user_ids = data.get('user_ids', []) 
 
     if not ot_date_str or not primary_user_ids:
         return jsonify({"error": "กรุณาเลือกวันที่และพนักงานอย่างน้อย 1 คน"}), 400
 
     try:
         ot_date = datetime.strptime(ot_date_str, '%Y-%m-%d').date()
-
         existing_schedule = OTSchedule.query.filter_by(ot_date=ot_date).first()
         if existing_schedule:
             return jsonify({"error": f"มีตาราง OT สำหรับวันที่ {ot_date_str} อยู่แล้ว"}), 400
 
-        # 1. สร้าง Schedule
         new_schedule = OTSchedule(ot_date=ot_date)
         db.session.add(new_schedule)
-        db.session.commit() # Commit เพื่อให้ได้ new_schedule.id
+        db.session.commit() 
 
-        # 2. สร้าง OTResponse และดึงข้อมูล User ที่มี LINE ID
         created_responses = []
-
-        # ดึง object User ทั้งหมดที่ถูกเลือก
         selected_users = User.query.filter(User.id.in_(primary_user_ids)).all()
-        user_map = {u.id: u for u in selected_users} # สร้าง map เพื่อให้ดึงข้อมูลง่าย
+        user_map = {u.id: u for u in selected_users} 
 
         for user_id in primary_user_ids:
             response = OTResponse(schedule_id=new_schedule.id, primary_user_id=user_id)
             db.session.add(response)
             created_responses.append(response)
 
-        db.session.commit() # Commit responses ทั้งหมด
+        db.session.commit() 
 
-        # 3. (อัปเกรด) ส่ง LINE Push Message หาพนักงาน "แต่ละคน"
-        links_for_admin_fallback = [] # ลิงก์สำรองให้ Admin (เผื่อพนักงานไม่มี LINE ID)
-        names_list_for_group = [] # รายชื่อสำหรับส่งเข้ากลุ่ม
+        links_for_admin_fallback = [] 
+        names_list_for_group = [] 
         users_sent_count = 0
 
         for resp in created_responses:
-            # ดึงข้อมูล User จาก map
             user = user_map.get(resp.primary_user_id)
             if not user:
-                continue # ถ้าหา user ไม่เจอ (ซึ่งไม่ควรเกิด)
+                continue 
 
             names_list_for_group.append(f"- {user.full_name}")
-            # สร้างลิงก์ Survey ส่วนตัว
             survey_link = url_for('show_survey', token=resp.token, _external=True)
 
             if user.line_user_id:
-                # (ใหม่) ถ้าพนักงานคนนี้มี LINE ID, ส่งหาเขาโดยตรง
                 try:
                     message_text = (
                         f"สวัสดีครับ คุณ {user.full_name},\n\n"
@@ -413,24 +534,22 @@ def create_schedule():
                         f"กรุณากดยืนยัน/สละสิทธิ์ ภายในลิงก์นี้:\n\n"
                         f"{survey_link}"
                     )
+                    # (ใช้ v1/v2 API สำหรับส่ง Push Message)
                     message = TextSendMessage(text=message_text)
                     line_bot_api.push_message(user.line_user_id, messages=message)
                     users_sent_count += 1
                 except Exception as e:
                     print(f"!!! ส่ง LINE หา {user.full_name} ({user.line_user_id}) ไม่สำเร็จ: {e}")
-                    # ถ้าส่งไม่สำเร็จ ให้ส่งลิงก์กลับไปให้ Admin แทน
                     links_for_admin_fallback.append({
                         "name": f"{user.full_name} (ส่ง LINE ไม่สำเร็จ)",
                         "link": survey_link
                     })
             else:
-                # (ใหม่) ถ้าพนักงานไม่มี LINE ID, ส่งลิงก์กลับไปให้ Admin
                 links_for_admin_fallback.append({
                     "name": f"{user.full_name} (ไม่มี LINE ID)",
                     "link": survey_link
                 })
 
-        # 4. (อัปเกรด) ส่งข้อความ "สรุป" เข้ากลุ่ม LINE หลัก (กลุ่ม Admin)
         names_list_str = "\n".join(names_list_for_group)
         message_to_group = (
             f"📢 สร้างตาราง OT ใหม่ 📢\n"
@@ -438,16 +557,14 @@ def create_schedule():
             f"ผู้มีสิทธิ์หลัก:\n{names_list_str}\n\n"
             f"✅ ระบบได้ส่งลิงก์ Survey ให้พนักงานแล้ว {users_sent_count} คน"
         )
-        # ถ้ามีลิงก์ที่ส่งไม่สำเร็จ ให้แจ้ง Admin ด้วย
         if links_for_admin_fallback:
-            message_to_group += "\n\n🚨 (Admin โปรดแจกจ่ายลิงก์ที่เหลือเอง)"
+            message_to_group += f"\n\n🚨 ({current_user.full_name} โปรดแจกจ่ายลิงก์ที่เหลือเอง)"
 
         send_line_push_message(message_to_group)
 
-        # 5. ส่งข้อมูลกลับหน้าเว็บ
         return jsonify({
             "message": "สร้างตาราง OT สำเร็จ!",
-            "links": links_for_admin_fallback, # ส่งเฉพาะลิงก์ที่ส่งไม่สำเร็จ
+            "links": links_for_admin_fallback,
             "schedule_id": new_schedule.id
         }), 201
 
@@ -455,35 +572,29 @@ def create_schedule():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# (แทนที่ฟังก์ชันเก่าทั้งหมดด้วยอันนี้)
 @app.route('/admin')
+@login_required
 def admin_dashboard():
-    # 1. ดึงตาราง OT ทั้งหมด (สำหรับ Dropdown)
-    all_schedules = OTSchedule.query.order_by(OTSchedule.ot_date.desc()).all()
+    if not current_user.is_admin: abort(403)
     
-    # 2. ตรวจสอบ Input จาก User
+    all_schedules = OTSchedule.query.order_by(OTSchedule.ot_date.desc()).all()
     schedule_id_to_show = request.args.get('schedule_id', type=int)
-    search_date_str = request.args.get('search_date') # <-- (ใหม่) รับค่าจากช่องค้นหาวันที่
+    search_date_str = request.args.get('search_date') 
     
     selected_schedule = None
-    error_message = None # <-- (ใหม่) สำหรับแจ้งเตือน "ไม่พบข้อมูล"
+    error_message = None 
     
     try:
         if schedule_id_to_show:
-            # (เดิม) กรณี User เลือกจาก Dropdown
             selected_schedule = OTSchedule.query.get(schedule_id_to_show)
         
         elif search_date_str:
-            # (ใหม่) กรณี User ค้นหาด้วยวันที่
             search_date = datetime.strptime(search_date_str, '%Y-%m-%d').date()
             selected_schedule = OTSchedule.query.filter_by(ot_date=search_date).first()
-            
             if not selected_schedule:
-                # (ใหม่) กรณีค้นหาแล้วไม่เจอ
                 error_message = f"ไม่พบตาราง OT สำหรับวันที่ {search_date.strftime('%d/%m/%Y')}"
                 
         elif all_schedules:
-            # (เดิม) กรณีเข้าหน้า /admin ครั้งแรก ให้แสดงอันล่าสุด
             selected_schedule = all_schedules[0] 
             
     except ValueError:
@@ -491,29 +602,28 @@ def admin_dashboard():
     except Exception as e:
         error_message = f"เกิดข้อผิดพลาด: {str(e)}"
 
-    # 3. เตรียมข้อมูล responses (เหมือนเดิม)
     responses = []
     if selected_schedule:
         responses = selected_schedule.responses
 
-    # 4. ส่งข้อมูลไปหน้าเว็บ (เพิ่ม error_message)
     return render_template('admin.html', 
                            all_schedules=all_schedules,
                            selected_schedule=selected_schedule,
                            responses=responses,
-                           error_message=error_message # <-- (ใหม่)
-                          )
+                           error_message=error_message 
+                           )
 
 @app.route('/setup-demo')
+@login_required
 def setup_demo():
+    if not current_user.is_admin: abort(403)
     try:
-        # ลบข้อมูลเก่าทั้งหมด (เรียงลำดับถูกต้อง)
         db.session.query(OTResponse).delete()
         db.session.query(OTSchedule).delete()
-        db.session.query(User).delete()
+        # (อัปเกรด) ลบเฉพาะ User ที่ไม่ใช่ Admin
+        User.query.filter(User.is_admin == False).delete()
         db.session.commit()
         
-        # สร้าง User 5 คน
         user_a = User(username='a', full_name='นายประทวน มงคลศิลป์')
         user_b = User(username='b', full_name='นายสุธี แซ่อึ้ง')
         user_c = User(username='c', full_name='นายพลวัต รัตนภักดี')
@@ -524,7 +634,7 @@ def setup_demo():
         
         return f"""
         <h1>สร้างข้อมูลพนักงาน 5 คนสำเร็จ!</h1>
-        <p>ลบข้อมูลตาราง OT เก่าทั้งหมด และสร้างรายชื่อพนักงาน 5 คนเรียบร้อยแล้ว</p>
+        <p>ลบข้อมูลตาราง OT และพนักงานเก่าทั้งหมด (ยกเว้น Admin) และสร้างรายชื่อพนักงาน 5 คนเรียบร้อยแล้ว</p>
         <hr>
         <p><b>ขั้นตอนต่อไป:</b> <a href='/admin/create'>ไปที่หน้าสร้างตาราง OT</a></p>
         <p><b>หรือไปที่หน้า Dashboard หลัก:</b> <a href='/admin'>/admin</a></p>
@@ -536,5 +646,4 @@ def setup_demo():
 
 # --- 4. ส่วนสำหรับรัน Server ---
 if __name__ == '__main__':
-    # FIX 1.2: ลบ db.create_all() ออกจากตรงนี้
     app.run(debug=True, port=5000)
