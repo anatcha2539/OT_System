@@ -649,7 +649,7 @@ def setup_demo():
         db.session.rollback()
         return f"เกิดข้อผิดพลาด: {e}"
     
-    @handler.add(MessageEvent, message=TextMessageContent)
+@handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_id = event.source.user_id
     text = event.message.text
@@ -708,7 +708,7 @@ def handle_message(event):
             )
     except Exception as e:
         print(f"!!! ไม่สามารถ 'ตอบกลับ' หา {user_id} ได้ (v3): {e}")
-        
+
 
 
 # --- 4. ส่วนสำหรับรัน Server ---
