@@ -648,6 +648,67 @@ def setup_demo():
     except Exception as e:
         db.session.rollback()
         return f"เกิดข้อผิดพลาด: {e}"
+    
+    @handler.add(MessageEvent, message=TextMessageContent)
+def handle_message(event):
+    user_id = event.source.user_id
+    text = event.message.text
+    reply_text = "" # ตัวแปรสำหรับเก็บข้อความตอบกลับ
+
+    # --- 1. ตรวจสอบ Logic ---
+    if text == "ดูตาราง OT ที่ยังไม่ตอบ":
+        user = User.query.filter_by(line_user_id=user_id).first()
+
+        if not user:
+            reply_text = "ไม่พบข้อมูลของคุณในระบบ กรุณาติดต่อ Admin เพื่อลงทะเบียน LINE User ID ครับ"
+        else:
+            # (อัปเกรด) ค้นหา OT ที่ยังไม่ตอบ และ "ยังไม่ผ่านมา"
+            pending_responses = db.session.query(OTResponse).join(OTSchedule).filter(
+                OTResponse.primary_user_id == user.id,
+                OTResponse.response_status == 'pending',
+                OTSchedule.ot_date >= date.today() # เอาเฉพาะ OT ที่ยังไม่ผ่านมา
+            ).order_by(OTSchedule.ot_date.asc()).all()
+
+            if not pending_responses:
+                reply_text = f"สวัสดีครับ คุณ {user.full_name}\n\nคุณไม่มียอด OT ค้างตอบครับ 👍"
+            else:
+                reply_text = f"สวัสดีครับ คุณ {user.full_name}\n\nคุณมี OT ที่ยังไม่ตอบ {len(pending_responses)} รายการ:\n\n"
+                
+                # (สำคัญ) ต้องใช้ app.app_context() 
+                # เพื่อให้ url_for() ทำงานนอก Request ปกติของ Flask ได้
+                with app.app_context():
+                    for resp in pending_responses:
+                        survey_link = url_for('show_survey', token=resp.token, _external=True)
+                        reply_text += (
+                            f"📅 วันที่: {resp.schedule.ot_date.strftime('%d/%m/%Y')}\n"
+                            f"🔗 ลิงก์: {survey_link}\n\n"
+                        )
+                reply_text = reply_text.strip() # ลบ \n ตัวสุดท้าย
+
+    else:
+        # --- Logic เดิม: (ถ้าไม่ใช่คำสั่ง Rich Menu) ---
+        # พิมพ์ Log สำหรับ Admin (เหมือนเดิม)
+        print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print(f"!!! USER ID ที่คุณตามหาคือ: {user_id}")
+        print(f"!!! เขาพิมพ์ว่า: {text}")
+        print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
+        # ตอบกลับ User ID (เหมือนเดิม)
+        reply_text = f'นี่คือ User ID ของคุณ:\n{user_id}\n\nกรุณาคัดลอก ID นี้ไปให้ Admin ครับ'
+
+    # --- 2. ส่งการตอบกลับ (ใช้โครงสร้าง v3 เดิมของคุณ) ---
+    try:
+        with ApiClient(Configuration(access_token=YOUR_CHANNEL_ACCESS_TOKEN)) as api_client:
+            line_bot_api_v3 = MessagingApi(api_client)
+            line_bot_api_v3.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[V3TextMessage(text=reply_text)]
+                )
+            )
+    except Exception as e:
+        print(f"!!! ไม่สามารถ 'ตอบกลับ' หา {user_id} ได้ (v3): {e}")
+        
 
 
 # --- 4. ส่วนสำหรับรัน Server ---
