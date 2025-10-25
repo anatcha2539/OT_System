@@ -379,25 +379,53 @@ def create_schedule():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+# (แทนที่ฟังก์ชันเก่าทั้งหมดด้วยอันนี้)
 @app.route('/admin')
 def admin_dashboard():
+    # 1. ดึงตาราง OT ทั้งหมด (สำหรับ Dropdown)
     all_schedules = OTSchedule.query.order_by(OTSchedule.ot_date.desc()).all()
+    
+    # 2. ตรวจสอบ Input จาก User
     schedule_id_to_show = request.args.get('schedule_id', type=int)
+    search_date_str = request.args.get('search_date') # <-- (ใหม่) รับค่าจากช่องค้นหาวันที่
+    
     selected_schedule = None
+    error_message = None # <-- (ใหม่) สำหรับแจ้งเตือน "ไม่พบข้อมูล"
     
-    if schedule_id_to_show:
-        selected_schedule = OTSchedule.query.get(schedule_id_to_show)
-    elif all_schedules:
-        selected_schedule = all_schedules[0] 
-    
+    try:
+        if schedule_id_to_show:
+            # (เดิม) กรณี User เลือกจาก Dropdown
+            selected_schedule = OTSchedule.query.get(schedule_id_to_show)
+        
+        elif search_date_str:
+            # (ใหม่) กรณี User ค้นหาด้วยวันที่
+            search_date = datetime.strptime(search_date_str, '%Y-%m-%d').date()
+            selected_schedule = OTSchedule.query.filter_by(ot_date=search_date).first()
+            
+            if not selected_schedule:
+                # (ใหม่) กรณีค้นหาแล้วไม่เจอ
+                error_message = f"ไม่พบตาราง OT สำหรับวันที่ {search_date.strftime('%d/%m/%Y')}"
+                
+        elif all_schedules:
+            # (เดิม) กรณีเข้าหน้า /admin ครั้งแรก ให้แสดงอันล่าสุด
+            selected_schedule = all_schedules[0] 
+            
+    except ValueError:
+        error_message = "รูปแบบวันที่ไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)"
+    except Exception as e:
+        error_message = f"เกิดข้อผิดพลาด: {str(e)}"
+
+    # 3. เตรียมข้อมูล responses (เหมือนเดิม)
     responses = []
     if selected_schedule:
         responses = selected_schedule.responses
 
+    # 4. ส่งข้อมูลไปหน้าเว็บ (เพิ่ม error_message)
     return render_template('admin.html', 
-                           all_schedules=all_schedules,      
-                           selected_schedule=selected_schedule, 
-                           responses=responses              
+                           all_schedules=all_schedules,
+                           selected_schedule=selected_schedule,
+                           responses=responses,
+                           error_message=error_message # <-- (ใหม่)
                           )
 
 @app.route('/setup-demo')

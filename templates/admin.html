@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard</title>
     <style>
-        /* (CSS นี้เป็นเพียงตัวอย่างให้หน้าเว็บดูง่ายขึ้น) */
+        /* (CSS เดิม) */
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
             margin: 0; 
@@ -36,48 +36,60 @@
         }
         nav strong { font-size: 1.1em; color: #000; }
         
-        table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin-top: 20px;
-        }
-        th, td { 
-            border: 1px solid #dee2e6; 
-            padding: 12px; 
-            text-align: left; 
-        }
-        th { 
-            background-color: #f1f3f5; 
-            font-weight: 600;
-        }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #dee2e6; padding: 12px; text-align: left; }
+        th { background-color: #f1f3f5; font-weight: 600; }
         tr:nth-child(even) { background-color: #f8f9fa; }
 
-        .dropdown-form { margin-bottom: 1.5em; font-size: 1.1em; }
-        .dropdown-form select { padding: 5px; font-size: 1em; }
-
-        .header-flex {
+        /* (ใหม่) จัดการฟอร์มเลือกวันที่ */
+        .search-container {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
             flex-wrap: wrap;
+            gap: 20px; /* ระยะห่างระหว่าง 2 ฟอร์ม */
+            margin-bottom: 1.5em;
+            font-size: 1.1em;
+            align-items: flex-end;
         }
-
-        .delete-btn {
-            background-color: #dc3545;
+        .search-container form {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #e9ecef;
+        }
+        .search-container label { font-weight: bold; display: block; margin-bottom: 5px; }
+        .search-container select, .search-container input[type="date"] {
+            padding: 8px;
+            font-size: 0.9em;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        .search-container button {
+            padding: 8px 12px;
+            font-size: 0.9em;
+            background-color: #007bff;
             color: white;
             border: none;
-            padding: 8px 12px;
-            cursor: pointer;
             border-radius: 4px;
-            font-size: 0.9em;
-            font-weight: 500;
+            cursor: pointer;
         }
-        .delete-btn:hover { background-color: #c82333; }
 
-        /* สไตล์สำหรับสถานะ */
+        .header-flex { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+        .delete-btn { background-color: #dc3545; color: white; border: none; padding: 8px 12px; cursor: pointer; border-radius: 4px; font-size: 0.9em; font-weight: 500; }
+        .delete-btn:hover { background-color: #c82333; }
         .status-pending { color: #868e96; font-style: italic; }
         .status-confirmed { color: #28a745; font-weight: bold; }
         .status-declined { color: #dc3545; font-weight: bold; }
+        
+        /* (ใหม่) สไตล์สำหรับกล่อง Error */
+        .error-box {
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 1em;
+            border-radius: 5px;
+            margin-bottom: 1.5em;
+        }
+
     </style>
 </head>
 <body>
@@ -90,9 +102,10 @@
             <a href="{{ url_for('admin_users_page') }}">จัดการผู้ใช้งาน</a>
         </nav>
 
-        <div class="dropdown-form">
+        <div class="search-container">
+            
             <form method="GET" action="{{ url_for('admin_dashboard') }}">
-                <label for="schedule_id"><strong>เลือกดูตาราง OT ของวันที่:</strong></label>
+                <label for="schedule_id">เลือกจากรายการ (ล่าสุด):</label>
                 <select name="schedule_id" id="schedule_id" onchange="this.form.submit()">
                     <option value="">-- กรุณาเลือกวันที่ --</option>
                     {% for schedule in all_schedules %}
@@ -104,9 +117,22 @@
                 </select>
                 <noscript><button type="submit">โหลดข้อมูล</button></noscript>
             </form>
-        </div>
 
-        <hr>
+            <form method="GET" action="{{ url_for('admin_dashboard') }}">
+                <label for="search_date">หรือ ค้นหาตามวันที่:</label>
+                <input type="date" name="search_date" id="search_date" 
+                       value="{{ request.args.get('search_date', '') }}">
+                <button type="submit">ค้นหา</button>
+            </form>
+
+        </div> <hr>
+
+        {% if error_message %}
+            <div class="error-box">
+                <strong>เกิดข้อผิดพลาด:</strong> {{ error_message }}
+            </div>
+        {% endif %}
+
 
         {% if selected_schedule %}
             
@@ -116,10 +142,8 @@
                 </h2>
                 
                 <form action="{{ url_for('delete_schedule', schedule_id=selected_schedule.id) }}" 
-                      method="POST" 
-                      style="margin: 10px 0;">
-                    <button type="submit" 
-                            class="delete-btn"
+                      method="POST" style="margin: 10px 0;">
+                    <button type="submit" class="delete-btn"
                             onclick="return confirm('คุณแน่ใจหรือไม่ว่าต้องการลบตาราง OT วันที่ {{ selected_schedule.ot_date.strftime('%d/%m/%Y') }}?\n\n*** การกระทำนี้จะลบข้อมูลการตอบรับทั้งหมดของวันนี้อย่างถาวร ***')">
                         🗑️ ลบตารางนี้
                     </button>
@@ -174,7 +198,7 @@
                 </tbody>
             </table>
 
-        {% else %}
+        {% elif not error_message %}
             <h3>ยังไม่มีตาราง OT ที่เลือก</h3>
             <p>กรุณาเลือกตาราง OT จากเมนูด้านบน หรือ <a href="{{ url_for('admin_create_page') }}">สร้างตารางใหม่</a></p>
         {% endif %}
