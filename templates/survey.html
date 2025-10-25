@@ -1,273 +1,236 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="th">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ยืนยันการทำ OT</title>
-    <style>
-        :root {
-            --primary-color: #007bff;
-            --success-color: #28a745;
-            --danger-color: #dc3545;
-            --light-gray: #f4f7f6;
-            --text-color: #333;
-            --border-radius: 8px;
-        }
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--light-gray);
-            color: var(--text-color);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container {
-            max-width: 500px;
-            width: 100%;
-            background: #ffffff;
-            padding: 30px 40px;
-            border-radius: 12px;
-            box-shadow: 0 6px 20px rgba(0,0,0,0.07);
-            text-align: center;
-        }
-        h1 { 
-            font-size: 1.5rem;
-            margin-bottom: 10px;
-        }
-        h2 { 
-            font-size: 1.1rem;
-            font-weight: 500;
-            color: #555;
-            margin-bottom: 25px;
-        }
-        .button-group {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            margin-top: 25px;
-        }
-        .button-group button {
-            flex-grow: 1;
-            font-size: 1rem;
-            padding: 12px;
-            border: none;
-            border-radius: var(--border-radius);
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-        }
-        .button-group button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        }
-        #btnConfirm { 
-            background-color: var(--success-color);
-            color: white; 
-        }
-        #btnDecline { 
-            background-color: var(--danger-color);
-            color: white; 
-        }
-        
-        #delegationOptions { 
-            display: none; 
-            margin-top: 25px; 
-            padding: 20px; 
-            background-color: #f9f9f9; 
-            border-radius: var(--border-radius);
-            text-align: left;
-        }
-        #delegationOptions p {
-            font-weight: 600;
-            margin-bottom: 15px;
-        }
-        #delegationOptions div {
-            margin-bottom: 15px;
-        }
-        #delegationOptions label {
-            margin-left: 8px;
-        }
-        #userDropdown { 
-            width: 100%; 
-            padding: 10px; 
-            margin-top: 8px; 
-            border-radius: 5px;
-            border: 1px solid #ccc;
-        }
-        
-        #btnSubmitDelegation {
-            width: 100%;
-            font-size: 1rem;
-            padding: 12px;
-            border: none;
-            border-radius: var(--border-radius);
-            font-weight: 600;
-            cursor: pointer;
-            background-color: var(--primary-color);
-            color: white;
-            margin-top: 10px;
-            transition: all 0.2s ease;
-        }
-        #btnSubmitDelegation:hover {
-            opacity: 0.85;
-        }
-
-        #message { 
-            margin-top: 25px; 
-            font-weight: 600;
-            font-size: 1.1rem;
-        }
-        .message-success { color: var(--success-color); }
-        .message-error { color: var(--danger-color); }
-        .message-info { color: var(--primary-color); }
-
-        button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>แบบตอบรับ OT</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    body { background-color: #f0f2f5; }
+    .survey-card {
+      max-width: 500px;
+      margin: 40px auto;
+    }
+  </style>
 </head>
 <body>
 
-    <div id="surveyData" 
-         data-response-id="{{ response_id }}" 
-         data-user-name="{{ user_name }}"
-         data-ot-date="{{ ot_date.strftime('%Y-%m-%d') if ot_date else '' }}"
-         data-current-status="{{ current_status }}">
-    </div>
+  <div class="container">
+    <div class="card shadow border-0 survey-card">
+      <div class="card-header bg-primary text-white text-center">
+        <h3 class="mb-0"><i class="bi bi-calendar-check-fill"></i> แบบตอบรับการทำ OT</h3>
+      </div>
+      <div class="card-body p-4">
 
-    <div class="container">
-        <h1>แบบสำรวจการทำ OT (วันหยุดสุดสัปดาห์)</h1>
-        <h2>สวัสดีคุณ, {{ user_name }}</h2>
-
-        <div id="message"></div>
-
-        <div class="button-group">
-            <button id="btnConfirm">✅ ยืนยัน (มาทำ)</button>
-            <button id="btnDecline">❌ สละสิทธิ์ (ไม่มา)</button>
+        <div class="text-center mb-4">
+          <h4 class="mb-1">สวัสดีครับ, คุณ {{ user_name }}</h4>
+          <p class="fs-5">
+            คุณได้รับสิทธิ์ OT สำหรับวันที่: 
+            <strong class="text-primary">{{ ot_date.strftime('%d/%m/%Y') }}</strong>
+          </p>
         </div>
 
-        <div id="delegationOptions">
-            <p>คุณต้องการมอบสิทธิ์ของคุณให้ใคร?</p>
-            <div>
-                <input type="radio" id="delegateAdmin" name="delegation_choice" value="admin" checked>
-                <label for="delegateAdmin">ให้แอดมินเลือกให้</label>
+        {% if current_status == 'pending' %}
+        <div id="survey-form-container">
+          <p class="text-center fw-bold fs-5">กรุณาเลือกการตอบรับของคุณ:</p>
+          
+          <div class="d-grid gap-2 mb-3">
+            <button class="btn btn-success btn-lg" id="btn-confirm">
+              <i class="bi bi-check-circle-fill"></i> ยืนยัน (มาทำ OT)
+            </button>
+            <button class="btn btn-danger btn-lg" id="btn-decline">
+              <i class="bi bi-x-circle-fill"></i> สละสิทธิ์
+            </button>
+          </div>
+
+          <div id="decline-options" style="display: none;">
+            <hr>
+            <p class="fw-bold">ในกรณีสละสิทธิ์ กรุณาเลือก:</p>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="decline_choice" id="choice-delegate" value="delegate">
+              <label class="form-check-label" for="choice-delegate">
+                มอบสิทธิ์ให้ผู้อื่น
+              </label>
             </div>
-            <div>
-                <input type="radio" id="delegateUser" name="delegation_choice" value="user">
-                <label for="delegateUser">มอบสิทธิ์ให้พนักงานคนอื่น:</label>
-                <select id="userDropdown" disabled>
-                    </select>
+            
+            <select class="form-select mt-2 mb-3" id="delegate-user-id" style="display: none;">
+              <option value="">-- กรุณาเลือกคนแทน --</option>
+              </select>
+
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="decline_choice" id="choice-admin" value="admin">
+              <label class="form-check-label" for="choice-admin">
+                ให้ Admin เป็นผู้จัดการ/เลือกแทน
+              </label>
             </div>
-            <button id="btnSubmitDelegation">ยืนยันการสละสิทธิ์</button>
+
+            <div class="d-grid mt-3">
+              <button class="btn btn-primary" id="btn-submit-decline">
+                ยืนยันการสละสิทธิ์
+              </button>
+            </div>
+          </div>
         </div>
+        
+        <div id="result-message" class="text-center" style="display: none;">
+          </div>
+
+        {% else %}
+        <div class="alert alert-warning text-center">
+          <h4 class="alert-heading"><i class="bi bi-info-circle-fill"></i> คุณได้ตอบแบบสำรวจนี้ไปแล้ว</h4>
+          <p class="mb-0">สถานะปัจจุบันของคุณคือ: <strong>{{ current_status.upper() }}</strong></p>
+        </div>
+        {% endif %}
+
+      </div>
     </div>
+  </div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            
-            const surveyDiv = document.getElementById('surveyData');
-            const RESPONSE_ID = surveyDiv.dataset.responseId;
-            const USER_NAME = surveyDiv.dataset.userName;
-            const CURRENT_STATUS = surveyDiv.dataset.currentStatus;
+  {% if current_status == 'pending' %}
+  <script>
+    // --- ตัวแปรที่ต้องใช้ ---
+    const responseId = {{ response_id }};
+    const surveyContainer = document.getElementById('survey-form-container');
+    const resultContainer = document.getElementById('result-message');
+    
+    const btnConfirm = document.getElementById('btn-confirm');
+    const btnDecline = document.getElementById('btn-decline');
+    
+    const declineOptions = document.getElementById('decline-options');
+    const delegateSelect = document.getElementById('delegate-user-id');
+    const radioDelegate = document.getElementById('choice-delegate');
+    const radioAdmin = document.getElementById('choice-admin');
+    const btnSubmitDecline = document.getElementById('btn-submit-decline');
+    
+    let otherUsers = []; // เก็บรายชื่อคนแทน
 
-            const btnConfirm = document.getElementById('btnConfirm');
-            const btnDecline = document.getElementById('btnDecline');
-            const delegationOptions = document.getElementById('delegationOptions');
-            const userDropdown = document.getElementById('userDropdown');
-            const btnSubmitDelegation = document.getElementById('btnSubmitDelegation');
-            const messageDiv = document.getElementById('message');
-            const radioAdmin = document.getElementById('delegateAdmin');
-            const radioUser = document.getElementById('delegateUser');
-            const buttonGroup = document.querySelector('.button-group');
-
-            function hideAllControls() {
-                buttonGroup.style.display = 'none';
-                delegationOptions.style.display = 'none';
-            }
-
-            if (CURRENT_STATUS !== 'pending') {
-                messageDiv.textContent = `คุณได้ตอบแบบสำรวจนี้ไปแล้ว (สถานะ: ${CURRENT_STATUS})`;
-                messageDiv.className = 'message-info';
-                hideAllControls();
-                return; 
-            }
-
-            fetch(`/api/survey-data/${RESPONSE_ID}`)
-                .then(response => response.json())
-                .then(data => {
-                    data.other_users.forEach(user => {
-                        const option = new Option(user.name, user.id);
-                        userDropdown.appendChild(option);
-                    });
-                })
-                .catch(error => {
-                    console.error('Error fetching users:', error);
-                    messageDiv.textContent = 'เกิดข้อผิดพลาดในการโหลดรายชื่อ';
-                    messageDiv.className = 'message-error';
-                });
-
-            btnConfirm.addEventListener('click', () => sendData({ response_id: RESPONSE_ID, status: 'confirmed' }));
-
-            btnDecline.addEventListener('click', () => {
-                delegationOptions.style.display = 'block';
-                buttonGroup.style.display = 'none';
-            });
-            
-            radioUser.addEventListener('change', () => userDropdown.disabled = false);
-            radioAdmin.addEventListener('change', () => userDropdown.disabled = true);
-
-            btnSubmitDelegation.addEventListener('click', () => {
-                let payload = { response_id: RESPONSE_ID, status: 'declined' };
-                if (radioAdmin.checked) {
-                    payload.let_admin_decide = true;
-                } else if (radioUser.checked) {
-                    payload.delegated_to_id = userDropdown.value;
-                }
-                sendData(payload);
-            });
-
-            function sendData(payload) {
-                btnConfirm.disabled = true;
-                btnDecline.disabled = true;
-                btnSubmitDelegation.disabled = true;
-                radioAdmin.disabled = true;
-                radioUser.disabled = true;
-                userDropdown.disabled = true;
-                messageDiv.textContent = 'กำลังบันทึกข้อมูล...';
-                messageDiv.className = 'message-info';
-
-                fetch('/submit-ot-response', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.message) {
-                        messageDiv.textContent = `บันทึกข้อมูลของคุณแล้ว: ${data.message}`;
-                        messageDiv.className = 'message-success';
-                    } else {
-                        messageDiv.textContent = `เกิดข้อผิดพลาด: ${data.error}`;
-                        messageDiv.className = 'message-error';
-                    }
-                    hideAllControls();
-                })
-                .catch(error => {
-                    messageDiv.textContent = `เกิดข้อผิดพลาดร้ายแรง: ${error}`;
-                    messageDiv.className = 'message-error';
-                });
-            }
+    // --- (A) ดึงข้อมูลคนแทน (Other Users) เมื่อเปิดหน้า ---
+    async function loadOtherUsers() {
+      try {
+        const response = await fetch(`/api/survey-data/${responseId}`);
+        if (!response.ok) throw new Error('ไม่สามารถโหลดข้อมูลได้');
+        
+        const data = await fetch(`/api/survey-data/${responseId}`).then(res => res.json());
+        otherUsers = data.other_users;
+        
+        // เติมรายชื่อลงใน <select>
+        delegateSelect.innerHTML = '<option value="">-- กรุณาเลือกคนแทน --</option>'; // ล้างค่าเก่า
+        otherUsers.forEach(user => {
+          const option = document.createElement('option');
+          option.value = user.id;
+          option.textContent = user.name;
+          delegateSelect.appendChild(option);
         });
-    </script>
+      } catch (error) {
+        showResult('danger', 'เกิดข้อผิดพลาด', 'ไม่สามารถโหลดรายชื่อคนแทนได้: ' + error.message);
+      }
+    }
+
+    // --- (B) ฟังก์ชันส่งข้อมูลไป Backend ---
+    async function submitResponse(payload) {
+      try {
+        const response = await fetch("{{ url_for('submit_ot_response') }}", {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          showResult('success', 'บันทึกผลสำเร็จ!', 'ขอบคุณสำหรับการตอบรับ ระบบได้บันทึกข้อมูลของคุณแล้ว');
+        } else {
+          // ถ้า Error จาก Backend (เช่น เลือกคนซ้ำ)
+          showResult('danger', 'เกิดข้อผิดพลาด', result.error || 'ไม่สามารถบันทึกข้อมูลได้');
+        }
+      } catch (error) {
+        showResult('danger', 'เกิดข้อผิดพลาด', 'ไม่สามารถเชื่อมต่อกับ Server ได้: ' + error.message);
+      }
+    }
+
+    // --- (C) ฟังก์ชันแสดงผลลัพธ์ (ซ่อนฟอร์ม) ---
+    function showResult(type, title, message) {
+      surveyContainer.style.display = 'none'; // ซ่อนฟอร์ม
+      resultContainer.style.display = 'block'; // แสดงผลลัพธ์
+      
+      const icon = (type === 'success') ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill';
+      
+      resultContainer.innerHTML = `
+        <div class="alert alert-${type}">
+          <h4 class="alert-heading"><i class="bi ${icon}"></i> ${title}</h4>
+          <p>${message}</p>
+        </div>
+        <button class="btn btn-secondary" onclick="location.reload()">โหลดหน้าใหม่</button>
+      `;
+    }
+
+    // --- (D) Event Listeners ---
+
+    // 1. กด "ยืนยัน (มาทำ OT)"
+    btnConfirm.addEventListener('click', () => {
+      if (confirm('คุณยืนยันที่จะมาทำ OT ในวันนี้ใช่หรือไม่?')) {
+        const payload = {
+          response_id: responseId,
+          status: 'confirmed'
+        };
+        submitResponse(payload);
+      }
+    });
+
+    // 2. กด "สละสิทธิ์" (ครั้งแรก)
+    btnDecline.addEventListener('click', () => {
+      declineOptions.style.display = 'block'; // แสดงตัวเลือก
+    });
+
+    // 3. กดเลือก "มอบสิทธิ์ให้ผู้อื่น"
+    radioDelegate.addEventListener('change', () => {
+      if (radioDelegate.checked) {
+        delegateSelect.style.display = 'block'; // แสดง Dropdown
+      }
+    });
+
+    // 4. กดเลือก "ให้ Admin จัดการ"
+    radioAdmin.addEventListener('change', () => {
+      if (radioAdmin.checked) {
+        delegateSelect.style.display = 'none'; // ซ่อน Dropdown
+      }
+    });
+
+    // 5. กด "ยืนยันการสละสิทธิ์" (ปุ่มสุดท้าย)
+    btnSubmitDecline.addEventListener('click', () => {
+      let payload = {
+        response_id: responseId,
+        status: 'declined'
+      };
+
+      if (radioDelegate.checked) {
+        // --- กรณีมอบสิทธิ์ ---
+        const selectedUserId = delegateSelect.value;
+        if (!selectedUserId) {
+          alert('กรุณาเลือกคนแทน');
+          return;
+        }
+        payload.delegated_to_id = parseInt(selectedUserId);
+        
+      } else if (radioAdmin.checked) {
+        // --- กรณีให้ Admin จัดการ ---
+        payload.let_admin_decide = true;
+        
+      } else {
+        alert('กรุณาเลือกวิธีสละสิทธิ์');
+        return;
+      }
+      
+      if (confirm('คุณยืนยันที่จะสละสิทธิ์ OT นี้ใช่หรือไม่?')) {
+        submitResponse(payload);
+      }
+    });
+
+    // --- (E) เริ่มทำงาน ---
+    loadOtherUsers();
+
+  </script>
+  {% endif %}
 </body>
 </html>

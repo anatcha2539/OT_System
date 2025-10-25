@@ -1,117 +1,154 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>สร้างตาราง OT</title>
-    <style>
-        body { font-family: sans-serif; margin: 2em; }
-        form { background: #f4f4f4; padding: 1.5em; border-radius: 8px; }
-        div { margin-bottom: 1em; }
-        label { display: block; margin-bottom: 0.5em; font-weight: bold; }
-        input[type="date"], input[type="checkbox"] { margin-right: 0.5em; }
-        button { background: #007bff; color: white; padding: 0.8em 1.2em; border: none; border-radius: 5px; cursor: pointer; }
-        #result { margin-top: 1.5em; }
-        #result h3 { color: #0056b3; }
-        #result li { background: #eee; padding: 0.5em; margin-bottom: 0.5em; list-style: none; }
-    </style>
-</head>
-<body>
-    <h1>สร้างตาราง OT ใหม่</h1>
-    <nav>
-    <a href="{{ url_for('admin_dashboard') }}">Dashboard</a> |
-    <a href="{{ url_for('admin_create_page') }}">สร้างตาราง OT</a> |
-    <strong><a href="{{ url_for('admin_users_page') }}">จัดการผู้ใช้งาน</a></strong>
-</nav>
-    
-    <p>เลือกวันที่ และเลือกพนักงานที่เป็น "สิทธิ์หลัก" สำหรับวันนั้น</p>
-    
-    <form id="create-ot-form">
-        <div>
-            <label for="ot-date">เลือกวันที่สำหรับ OT:</label>
-            <input type="date" id="ot-date" required>
-        </div>
-        
-        <h3>เลือกผู้มีสิทธิ์หลัก (Primary Users):</h3>
-        <div id="user-list">
-            {% for user in users %}
-            <div>
-                <input type="checkbox" id="user-{{ user.id }}" name="user_ids" value="{{ user.id }}">
-                <label for="user-{{ user.id }}">{{ user.full_name }}</label>
-            </div>
-            {% endfor %}
-            {% if not users %}
-                <p style="color: red;">ไม่พบรายชื่อพนักงาน! กรุณาไปที่ <a href="/setup-demo">/setup-demo</a> ก่อน</p>
-            {% endif %}
-        </div>
-        
-        <button type="submit" {% if not users %}disabled{% endif %}>สร้างตาราง OT และรับลิงก์</button>
-    </form>
-    
-    <hr>
-    <div id="result">
-        </div>
-    <br>
-    <a href="/admin">กลับไปหน้า Dashboard หลัก</a>
+{% extends "base.html" %}
 
-    <script>
-        document.getElementById('create-ot-form').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const otDate = document.getElementById('ot-date').value;
-            const checkedBoxes = document.querySelectorAll('input[name="user_ids"]:checked');
-            const userIds = Array.from(checkedBoxes).map(cb => parseInt(cb.value));
-            
-            const resultDiv = document.getElementById('result');
-            resultDiv.innerHTML = '<p>กำลังสร้าง...</p>';
-            
-            if (!otDate || userIds.length === 0) {
-                resultDiv.innerHTML = '<p style="color: red;">กรุณาเลือกวันที่และพนักงานอย่างน้อย 1 คน</p>';
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/create-schedule', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        date: otDate,
-                        user_ids: userIds
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (!response.ok) {
-                    resultDiv.innerHTML = `<p style="color: red;"><b>เกิดข้อผิดพลาด:</b> ${data.error || 'ไม่สามารถติดต่อ Server'}</p>`;
-                } else {
-                    let linksHtml = '<h3>ลิงก์สำหรับส่งให้พนักงาน:</h3><ul>';
-                    data.links.forEach(item => {
-                        // สร้าง URL แบบเต็ม (เผื่อ Admin copy ไปวางที่อื่น)
-                        const fullUrl = `${window.location.origin}${item.link}`;
-                        linksHtml += `
-                            <li>
-                                <b>${item.name}:</b> 
-                                <a href="${item.link}" target="_blank">${fullUrl}</a>
-                            </li>`;
-                    });
-                    linksHtml += '</ul>';
-                    
-                    resultDiv.innerHTML = `
-                        <h2 style="color: green;">${data.message}</h2>
-                        <p>(ระบบได้แจ้งเตือนเข้ากลุ่ม LINE แล้ว)</p>
-                        ${linksHtml}
-                        <hr>
-                        <a href="/admin?schedule_id=${data.schedule_id}">ไปที่หน้า Dashboard เพื่อดูผลลัพธ์</a>
-                    `;
-                    // ล้างฟอร์ม
-                    document.getElementById('create-ot-form').reset();
-                }
-                
-            } catch (err) {
-                resultDiv.innerHTML = `<p style="color: red;"><b>เกิดข้อผิดพลาดในการเชื่อมต่อ:</b> ${err.message}</p>`;
-            }
-        });
-    </script>
-</body>
-</html>
+{% block content %}
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-white">
+        <h3 class="mb-0"><i class="bi bi-plus-circle-fill"></i> สร้างตาราง OT ใหม่</h3>
+      </div>
+      <div class="card-body">
+        
+        <form id="create-ot-form">
+          <div class="mb-3">
+            <label for="ot_date" class="form-label fw-bold">เลือกวันที่สำหรับ OT <span class="text-danger">*</span></label>
+            <input type="date" class="form-control" id="ot_date" required>
+          </div>
+          
+          <div class="mb-3">
+            <label class="form-label fw-bold">เลือกพนักงาน (ผู้มีสิทธิ์หลัก) <span class="text-danger">*</span></label>
+            <div class="p-3 border rounded" style="max-height: 400px; overflow-y: auto;">
+              {% for user in users %}
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="user_ids" value="{{ user.id }}" id="user_{{ user.id }}">
+                <label class="form-check-label" for="user_{{ user.id }}">
+                  {{ user.full_name }}
+                </label>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          
+          <button type="submit" class="btn btn-primary w-100 btn-lg">
+            <i class="bi bi-send-fill"></i>
+            สร้างตาราง OT และส่ง LINE
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card shadow-sm border-0" id="result-card" style="display: none;">
+      <div class="card-body p-4 text-center">
+        
+        <div id="loading-spinner" class.="text-center p-5" style="display: none;">
+          <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-3">กำลังสร้างตารางและส่ง LINE...</p>
+        </div>
+
+        <div id="result-content">
+          </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+  document.getElementById('create-ot-form').addEventListener('submit', async function(event) {
+    event.preventDefault(); // หยุดการ submit form แบบปกติ
+
+    const otDate = document.getElementById('ot_date').value;
+    const selectedCheckboxes = document.querySelectorAll('input[name="user_ids"]:checked');
+    const userIds = Array.from(selectedCheckboxes).map(cb => parseInt(cb.value));
+
+    // ซ่อนผลลัพธ์เก่า (ถ้ามี)
+    const resultCard = document.getElementById('result-card');
+    const resultContent = document.getElementById('result-content');
+    const loadingSpinner = document.getElementById('loading-spinner');
+    
+    resultCard.style.display = 'block';
+    resultContent.innerHTML = '';
+    loadingSpinner.style.display = 'block';
+
+    if (!otDate || userIds.length === 0) {
+      loadingSpinner.style.display = 'none';
+      resultContent.innerHTML = `
+        <h3 class="text-danger"><i class="bi bi-exclamation-triangle-fill"></i> ผิดพลาด</h3>
+        <p class="fs-5">กรุณาเลือกวันที่และพนักงานอย่างน้อย 1 คน</p>
+      `;
+      return;
+    }
+
+    const data = {
+      date: otDate,
+      user_ids: userIds
+    };
+
+    try {
+      const response = await fetch("{{ url_for('create_schedule') }}", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+      const result = await response.json();
+      loadingSpinner.style.display = 'none'; // ซ่อน loading
+
+      if (response.ok) {
+        // --- กรณีสร้างสำเร็จ ---
+        // (นี่คือส่วนที่สร้างผลลัพธ์เหมือนใน Screenshot ของคุณ)
+        let linksHtml = '';
+        if (result.links && result.links.length > 0) {
+          linksHtml = '<h5 class="mt-4 text-start">🚨 ลิงก์ที่ส่ง LINE ไม่สำเร็จ (Admin โปรดส่งเอง):</h5>';
+          linksHtml += '<ul class="list-group text-start">';
+          result.links.forEach(item => {
+            linksHtml += `
+              <li class="list-group-item">
+                <strong>${item.name}</strong><br>
+                <input type="text" class="form-control form-control-sm mt-1" value="${item.link}" readonly onclick="this.select()">
+              </li>
+            `;
+          });
+          linksHtml += '</ul>';
+        } else {
+          linksHtml = '<p class="text-muted">(ระบบส่ง LINE หาพนักงานทุกคนสำเร็จ)</p>';
+        }
+
+        resultContent.innerHTML = `
+          <h3 class="text-success"><i class="bi bi-check-circle-fill"></i> สร้างตาราง OT สำเร็จ!</h3>
+          <p class="fs-5">(ระบบได้แจ้งเตือนเข้ากลุ่ม LINE หลักแล้ว)</p>
+          ${linksHtml}
+          <hr>
+          <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-primary mt-3">
+            <i class="bi bi-bar-chart-fill"></i>
+            ไปที่หน้า Dashboard เพื่อดูผลลัพธ์
+          </a>
+        `;
+      } else {
+        // --- กรณี Error จาก Backend ---
+        resultContent.innerHTML = `
+          <h3 class="text-danger"><i class="bi bi-x-circle-fill"></i> สร้างตารางไม่สำเร็จ</h3>
+          <p class="fs-5 text-muted">${result.error || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}</p>
+        `;
+      }
+
+    } catch (error) {
+      // --- กรณี Network Error ---
+      loadingSpinner.style.display = 'none';
+      resultContent.innerHTML = `
+        <h3 class="text-danger"><i class="bi bi-wifi-off"></i> เกิดข้อผิดพลาด</h3>
+        <p class="fs-5 text-muted">ไม่สามารถเชื่อมต่อกับ Server ได้: ${error.message}</p>
+      `;
+    }
+  });
+</script>
+{% endblock %}

@@ -1,134 +1,112 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>จัดการผู้ใช้งาน</title>
-    <style>
-        body { font-family: sans-serif; margin: 2em; }
-        h1, h2 { color: #333; }
-        nav { margin-bottom: 2em; }
-        nav a { margin-right: 1em; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f4f4f4; }
-        .form-container { margin-top: 2em; padding: 1em; border: 1px solid #ccc; border-radius: 5px; }
-        .form-container input { width: 200px; margin-right: 10px; margin-bottom: 10px; }
-        .action-btn { margin-right: 5px; }
-        
-        /* (ใหม่) สไตล์สำหรับช่อง LINE ID */
-        th:nth-child(3), td:nth-child(3) { width: 35%; }
-        td:nth-child(3) input { width: 95%; } /* ให้ input ในตารางเต็มช่อง */
-    </style>
-</head>
-<body>
-    <h1>ระบบจัดการ OT</h1>
-    <nav>
-        <a href="{{ url_for('admin_dashboard') }}">Dashboard</a> |
-        <a href="{{ url_for('admin_create_page') }}">สร้างตาราง OT</a> |
-        <strong>จัดการผู้ใช้งาน</strong>
-    </nav>
+{% extends "base.html" %}
 
-    <div class="form-container">
-        <h2>เพิ่มผู้ใช้งานใหม่</h2>
-        <form action="{{ url_for('add_user') }}" method="POST">
-            <label for="username">Username (ตัวย่อ):</label>
-            <input type="text" id="username" name="username" required>
-            
-            <label for="full_name">ชื่อ-นามสกุล (เต็ม):</label>
-            <input type="text" id="full_name" name="full_name" required>
-
-            <label for="line_user_id">LINE User ID (ไม่บังคับ):</label>
-            <input type="text" id="line_user_id" name="line_user_id" placeholder="U123456789...">
-            <button type="submit">เพิ่มผู้ใช้งาน</button>
+{% block content %}
+<div class="card shadow-sm border-0">
+  <div class="card-header bg-white pb-0 border-0">
+    <h3 class="mb-0"><i class="bi bi-bar-chart-fill"></i> Dashboard (สรุปผล OT)</h3>
+    <hr>
+  </div>
+  <div class="card-body">
+    
+    <div class="row g-3 mb-4 p-3 bg-light rounded border">
+      
+      <div class="col-md-6">
+        <label for="schedule_id" class="form-label fw-bold">เลือกดูตาราง OT เก่า</label>
+        <form method="GET" action="{{ url_for('admin_dashboard') }}" id="selectForm">
+          <select class="form-select" id="schedule_id" name="schedule_id" onchange="document.getElementById('selectForm').submit();">
+            <option value="" disabled {% if not selected_schedule %}selected{% endif %}>
+              -- กรุณาเลือกวันที่ --
+            </option>
+            {% for s in all_schedules %}
+              <option value="{{ s.id }}" {% if selected_schedule and selected_schedule.id == s.id %}selected{% endif %}>
+                วันที่ {{ s.ot_date.strftime('%d/%m/%Y') }} (สร้างเมื่อ: {{ s.created_at.strftime('%Y-%m-%d %H:%M') }})
+              </option>
+            {% endfor %}
+          </select>
         </form>
-        <small>วิธีหา LINE User ID: ให้พนักงานแอดบอทของคุณเป็นเพื่อน แล้วส่งข้อความอะไรก็ได้ บอทของคุณต้องตั้งค่า "Webhook" เพื่อรับ Event และดึง `source.userId` (ส่วนนี้ต้องเขียนโค้ดเพิ่มที่ฝั่งบอท)</small>
+      </div>
+
+      <div class="col-md-6">
+        <label for="search_date" class="form-label fw-bold">หรือ ค้นหาด้วยวันที่</label>
+        <form method="GET" action="{{ url_for('admin_dashboard') }}" class="input-group">
+          <input type="date" class="form-control" id="search_date" name="search_date">
+          <button class="btn btn-outline-primary" type="submit">
+            <i class="bi bi-search"></i> ค้นหา
+          </button>
+        </form>
+      </div>
     </div>
 
-    <h2>รายชื่อผู้ใช้งานทั้งหมด ({{ users|length }} คน)</h2>
-    <table>
-        <thead>
+    {% if selected_schedule %}
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">
+          ผลการตอบรับ OT วันที่: <span class="text-primary">{{ selected_schedule.ot_date.strftime('%d/%m/%Y') }}</span>
+        </h4>
+        
+        <form method="POST" 
+              action="{{ url_for('delete_schedule', schedule_id=selected_schedule.id) }}" 
+              onsubmit="return confirm('คุณแน่ใจหรือไม่ว่าต้องการลบตาราง OT นี้ (ข้อมูลการตอบรับทั้งหมดจะหายไป)?')">
+          <button type="submit" class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-trash-fill"></i> ลบตาราง OT นี้
+          </button>
+        </form>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+          <thead class="table-light">
             <tr>
-                <th>ID</th>
-                <th>Username</th>
-                <th>LINE User ID</th>
-                <th>ชื่อ-นามสกุล</th>
-                <th style="width: 150px;">การจัดการ</th>
+              <th scope="col">#</th>
+              <th scope="col">ชื่อ-สกุล (ผู้มีสิทธิ์หลัก)</th>
+              <th scope="col">สถานะ</th>
+              <th scope="col">ผู้รับแทน / หมายเหตุ</th>
             </tr>
-        </thead>
-        <tbody>
-            {% for user in users %}
-            <tr id="user-row-{{ user.id }}">
-                <td>{{ user.id }}</td>
-                <td>{{ user.username }}</td>
-                <td>
-                    <input type="text" 
-                           id="line-id-{{ user.id }}" 
-                           value="{{ user.line_user_id or '' }}" 
-                           placeholder="(ว่าง)">
-                </td>
-                <td>
-                    <input type="text" 
-                            id="full-name-{{ user.id }}" 
-                            value="{{ user.full_name }}" 
-                            required>
-                </td>
-                <td>
-                    <button class="action-btn" onclick="editUser({{ user.id }})">บันทึก</button>
-                    
-                    <form action="{{ url_for('delete_user', user_id=user.id) }}" method="POST" style="display:inline;">
-                        <button type="submit" class="action-btn" onclick="return confirm('คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้ {{ user.full_name }}?')">ลบ</button>
-                    </form>
-                </td>
+          </thead>
+          <tbody>
+            {% for r in responses %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>
+                <i class="bi bi-person-circle"></i>
+                {{ r.primary_user.full_name }}
+              </td>
+              <td>
+                {% if r.response_status == 'confirmed' %}
+                  <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> ยืนยัน</span>
+                {% elif r.response_status == 'declined' %}
+                  <span class="badge bg-danger"><i class="bi bi-x-circle-fill"></i> สละสิทธิ์</span>
+                {% else %}
+                  <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split"></i> รอตอบรับ</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.delegated_user %}
+                  <span class="text-info">
+                    <i class="bi bi-arrow-right-short"></i> มอบให้: {{ r.delegated_user.full_name }}
+                  </span>
+                {% elif r.let_admin_decide %}
+                  <span class="text-muted">
+                    <i class="bi bi-person-fill-gear"></i> ให้ Admin เลือกแทน
+                  </span>
+                {% elif r.response_status == 'confirmed' %}
+                  <span class="text-success">- (มาด้วยตนเอง) -</span>
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
             </tr>
             {% endfor %}
-        </tbody>
-    </table>
+          </tbody>
+        </table>
+      </div>
+    
+    {% elif not error_message %}
+      <div class="text-center p-5">
+        <h3 class="text-muted">ยังไม่มีข้อมูลตาราง OT</h3>
+        <p>กรุณาเลือกตาราง OT จากเมนูด้านบน หรือ <a href="{{ url_for('admin_create_page') }}">คลิกที่นี่เพื่อสร้างตารางใหม่</a></p>
+      </div>
+    {% endif %}
 
-    <script>
-        function editUser(userId) {
-            // ดึงค่าใหม่จากช่อง input ในแถว
-            const newName = document.getElementById(`full-name-${userId}`).value;
-            const newLineId = document.getElementById(`line-id-${userId}`).value;
-
-            if (!newName || newName.trim() === "") {
-                alert("กรุณากรอก ชื่อ-นามสกุล");
-                return;
-            }
-
-            // ไฮไลต์แถวที่กำลังทำงาน
-            document.getElementById(`user-row-${userId}`).style.backgroundColor = '#fffbe6';
-
-            fetch(`/admin/edit-user/${userId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                // ส่งข้อมูลทั้ง 2 ค่ากลับไป
-                body: JSON.stringify({ 
-                    full_name: newName.trim(),
-                    line_user_id: newLineId.trim() 
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.message === "success") {
-                    // ถ้าสำเร็จ ให้เปลี่ยนสีกลับ
-                    document.getElementById(`user-row-${userId}`).style.backgroundColor = '#d4edda'; // สีเขียว
-                    setTimeout(() => {
-                         document.getElementById(`user-row-${userId}`).style.backgroundColor = ''; // กลับเป็นปกติ
-                    }, 2000);
-                } else {
-                    alert("เกิดข้อผิดพลาด: " + data.error);
-                    document.getElementById(`user-row-${userId}`).style.backgroundColor = '#f8d7da'; // สีแดง
-                }
-            })
-            .catch(err => {
-                console.error('Error:', err);
-                alert("เกิดข้อผิดพลาดในการเชื่อมต่อ");
-                document.getElementById(`user-row-${userId}`).style.backgroundColor = '#f8d7da'; // สีแดง
-            });
-        }
-    </script>
-</body>
-</html>
+  </div>
+</div>
+{% endblock %}

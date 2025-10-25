@@ -1,130 +1,191 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>จัดการผู้ใช้งาน</title>
-    <style>
-        body { font-family: sans-serif; margin: 2em; }
-        h1, h2 { color: #333; }
-        nav { margin-bottom: 2em; }
-        nav a { margin-right: 1em; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f4f4f4; }
-        .form-container { margin-top: 2em; padding: 1em; border: 1px solid #ccc; border-radius: 5px; }
-        .form-container input { width: 200px; margin-right: 10px; margin-bottom: 10px; }
-        .action-btn { margin-right: 5px; }
-        
-        /* (ใหม่) สไตล์สำหรับช่อง LINE ID */
-        th:nth-child(3), td:nth-child(3) { width: 35%; }
-        td:nth-child(3) input { width: 95%; } /* ให้ input ในตารางเต็มช่อง */
-    </style>
-</head>
-<body>
-    <h1>ระบบจัดการ OT</h1>
-    <nav>
-        <a href="{{ url_for('admin_dashboard') }}">Dashboard</a> |
-        <a href="{{ url_for('admin_create_page') }}">สร้างตาราง OT</a> |
-        <strong>จัดการผู้ใช้งาน</strong>
-    </nav>
+{% extends "base.html" %}
 
-    <div class="form-container">
-        <h2>เพิ่มผู้ใช้งานใหม่</h2>
-        <form action="{{ url_for('add_user') }}" method="POST">
-            <label for="username">Username (ตัวย่อ):</label>
-            <input type="text" id="username" name="username" required>
-            
-            <label for="full_name">ชื่อ-นามสกุล (เต็ม):</label>
-            <input type="text" id="full_name" name="full_name" required>
-
-            <label for="line_user_id">LINE User ID (ไม่บังคับ):</label>
-            <input type="text" id="line_user_id" name="line_user_id" placeholder="U123456789...">
-            <button type="submit">เพิ่มผู้ใช้งาน</button>
+{% block content %}
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm border-0 sticky-top" style="top: 80px;">
+      <div class="card-header bg-white">
+        <h4 class="mb-0"><i class="bi bi-person-plus-fill"></i> เพิ่มพนักงานใหม่</h4>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('add_user') }}">
+          <div class="mb-3">
+            <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="username" name="username" required>
+          </div>
+          <div class="mb-3">
+            <label for="full_name" class="form-label">ชื่อ-สกุล <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="full_name" name="full_name" required>
+          </div>
+          <div class="mb-3">
+            <label for="line_user_id" class="form-label">LINE User ID (ไม่บังคับ)</label>
+            <input type="text" class="form-control" id="line_user_id" name="line_user_id" placeholder="U123456789...">
+            <div class="form-text">
+              ถ้าใส่ไว้ ระบบจะส่ง LINE แจ้งเตือนหาพนักงานโดยตรง
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-plus-lg"></i> เพิ่มผู้ใช้
+          </button>
         </form>
-        <small>วิธีหา LINE User ID: ให้พนักงานแอดบอทของคุณเป็นเพื่อน แล้วส่งข้อความอะไรก็ได้ บอทของคุณต้องตั้งค่า "Webhook" เพื่อรับ Event และดึง `source.userId` (ส่วนนี้ต้องเขียนโค้ดเพิ่มที่ฝั่งบอท)</small>
+      </div>
     </div>
+  </div>
 
-    <h2>รายชื่อผู้ใช้งานทั้งหมด ({{ users|length }} คน)</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Username</th>
-                <th>LINE User ID</th>
-                <th>ชื่อ-นามสกุล</th>
-                <th style="width: 150px;">การจัดการ</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for user in users %}
-            <tr id="user-row-{{ user.id }}">
-                <td>{{ user.id }}</td>
+  <div class="col-lg-8">
+    <div class="card shadow-sm border-0">
+      <div class="card-header bg-white">
+        <h4 class="mb-0"><i class="bi bi-people-fill"></i> รายชื่อพนักงานทั้งหมด ({{ users|length }} คน)</h4>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th scope="col" class="ps-3">ID</th>
+                <th scope="col">Username</th>
+                <th scope="col">ชื่อ-สกุล</th>
+                <th scope="col">LINE User ID</th>
+                <th scope="col" class="text-end pe-3">จัดการ</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for user in users %}
+              <tr>
+                <td class="ps-3">{{ user.id }}</td>
                 <td>{{ user.username }}</td>
+                <td>{{ user.full_name }}</td>
                 <td>
-                    <input type="text" 
-                           id="line-id-{{ user.id }}" 
-                           value="{{ user.line_user_id or '' }}" 
-                           placeholder="(ว่าง)">
+                  {% if user.line_user_id %}
+                    <span class="badge bg-light text-dark border">{{ user.line_user_id }}</span>
+                  {% else %}
+                    <span class="badge bg-light text-muted border">- ไม่มี -</span>
+                  {% endif %}
                 </td>
-                <td>
-                     <input type="text" 
-                            id="full-name-{{ user.id }}" 
-                            value="{{ user.full_name }}" 
-                            required>
+                <td class="text-end pe-3">
+                  <button class="btn btn-sm btn-outline-warning" 
+                          data-bs-toggle="modal" 
+                          data-bs-target="#editUserModal"
+                          data-user-id="{{ user.id }}"
+                          data-full-name="{{ user.full_name }}"
+                          data-line-id="{{ user.line_user_id or '' }}">
+                    <i class="bi bi-pencil-fill"></i> แก้ไข
+                  </button>
+                  
+                  <form method="POST" 
+                        action="{{ url_for('delete_user', user_id=user.id) }}" 
+                        class="d-inline" 
+                        onsubmit="return confirm('คุณแน่ใจว่าต้องการลบ {{ user.full_name }}? (ถ้าผู้ใช้ถูกผูกกับตาราง OT แล้ว จะลบไม่ได้)')">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                      <i class="bi bi-trash-fill"></i> ลบ
+                    </button>
+                  </form>
                 </td>
-                <td>
-                    <button class="action-btn" onclick="editUser({{ user.id }})">บันทึก</button>
-                    
-                    <form action="{{ url_for('delete_user', user_id=user.id) }}" method="POST" style="display:inline;">
-                        <button type="submit" class="action-btn" onclick="return confirm('คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้ {{ user.full_name }}?')">ลบ</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-    <script>
-        function editUser(userId) {
-            const newName = document.getElementById(`full-name-${userId}`).value;
-            const newLineId = document.getElementById(`line-id-${userId}`).value;
 
-            if (!newName || newName.trim() === "") {
-                alert("กรุณากรอก ชื่อ-นามสกุล");
-                return;
-            }
+<div class="modal fade" id="editUserModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">แก้ไขข้อมูลพนักงาน</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="edit-user-form">
+          <input type="hidden" id="edit-user-id" name="user_id">
+          
+          <div class="mb-3">
+            <label for="edit-full-name" class="form-label">ชื่อ-สกุล <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" id="edit-full-name" name="full_name" required>
+          </div>
+          <div class="mb-3">
+            <label for="edit-line-user-id" class="form-label">LINE User ID (ไม่บังคับ)</label>
+            <input type="text" class="form-control" id="edit-line-user-id" name="line_user_id">
+          </div>
+          
+          <div id="edit-error-message" class="alert alert-danger" style="display: none;"></div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button type="button" class="btn btn-primary" id="save-edit-button">บันทึกการเปลี่ยนแปลง</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
 
-            document.getElementById(`user-row-${userId}`).style.backgroundColor = '#fffbe6';
 
-            fetch(`/admin/edit-user/${userId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ 
-                    full_name: newName.trim(),
-                    line_user_id: newLineId.trim() 
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.message === "success") {
-                    document.getElementById(`user-row-${userId}`).style.backgroundColor = '#d4edda';
-                    setTimeout(() => {
-                         document.getElementById(`user-row-${userId}`).style.backgroundColor = '';
-                    }, 2000);
-                } else {
-                    alert("เกิดข้อผิดพลาด: " + data.error);
-                    document.getElementById(`user-row-${userId}`).style.backgroundColor = '#f8d7da';
-                }
-            })
-            .catch(err => {
-                console.error('Error:', err);
-                alert("เกิดข้อผิดพลาดในการเชื่อมต่อ");
-                document.getElementById(`user-row-${userId}`).style.backgroundColor = '#f8d7da';
-            });
-        }
-    </script>
-</body>
-</html>
+{% block scripts %}
+<script>
+  const editModal = document.getElementById('editUserModal');
+  const editForm = document.getElementById('edit-user-form');
+  const saveButton = document.getElementById('save-edit-button');
+  const errorDiv = document.getElementById('edit-error-message');
+
+  // 1. เมื่อ Modal ถูกเปิด
+  editModal.addEventListener('show.bs.modal', function (event) {
+    // ปุ่มที่ถูกคลิก
+    const button = event.relatedTarget;
+    
+    // ดึงข้อมูลจาก data-* attributes
+    const userId = button.getAttribute('data-user-id');
+    const fullName = button.getAttribute('data-full-name');
+    const lineId = button.getAttribute('data-line-id');
+    
+    // เอาข้อมูลไปใส่ในฟอร์ม
+    editModal.querySelector('#edit-user-id').value = userId;
+    editModal.querySelector('#edit-full-name').value = fullName;
+    editModal.querySelector('#edit-line-user-id').value = lineId;
+    
+    // ล้าง error เก่า
+    errorDiv.style.display = 'none';
+    errorDiv.textContent = '';
+  });
+
+  // 2. เมื่อกดปุ่ม "บันทึกการเปลี่ยนแปลง"
+  saveButton.addEventListener('click', async function () {
+    const userId = editModal.querySelector('#edit-user-id').value;
+    const fullName = editModal.querySelector('#edit-full-name').value;
+    const lineId = editModal.querySelector('#edit-line-user-id').value;
+
+    const data = {
+      full_name: fullName,
+      line_user_id: lineId
+    };
+
+    try {
+      const response = await fetch(`/admin/edit-user/${userId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      const result = await response.json();
+
+      if (response.ok) {
+        // ถ้าสำเร็จ: ปิด Modal และ Reload หน้าเว็บ
+        const modalInstance = bootstrap.Modal.getInstance(editModal);
+        modalInstance.hide();
+        location.reload();
+      } else {
+        // ถ้าไม่สำเร็จ: แสดง Error ใน Modal
+        errorDiv.textContent = result.error || 'เกิดข้อผิดพลาด';
+        errorDiv.style.display = 'block';
+      }
+    } catch (error) {
+      errorDiv.textContent = 'ไม่สามารถเชื่อมต่อกับ Server ได้';
+      errorDiv.style.display = 'block';
+    }
+  });
+</script>
+{% endblock %}
