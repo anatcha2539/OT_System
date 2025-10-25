@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>สร้างตาราง OT</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        form { background: #f4f4f4; padding: 1.5em; border-radius: 8px; }
+        div { margin-bottom: 1em; }
+        label { display: block; margin-bottom: 0.5em; font-weight: bold; }
+        input[type="date"], input[type="checkbox"] { margin-right: 0.5em; }
+        button { background: #007bff; color: white; padding: 0.8em 1.2em; border: none; border-radius: 5px; cursor: pointer; }
+        #result { margin-top: 1.5em; }
+        #result h3 { color: #0056b3; }
+        #result li { background: #eee; padding: 0.5em; margin-bottom: 0.5em; list-style: none; }
+    </style>
+</head>
+<body>
+    <h1>สร้างตาราง OT ใหม่</h1>
+    <p>เลือกวันที่ และเลือกพนักงานที่เป็น "สิทธิ์หลัก" สำหรับวันนั้น</p>
+    
+    <form id="create-ot-form">
+        <div>
+            <label for="ot-date">เลือกวันที่สำหรับ OT:</label>
+            <input type="date" id="ot-date" required>
+        </div>
+        
+        <h3>เลือกผู้มีสิทธิ์หลัก (Primary Users):</h3>
+        <div id="user-list">
+            {% for user in users %}
+            <div>
+                <input type="checkbox" id="user-{{ user.id }}" name="user_ids" value="{{ user.id }}">
+                <label for="user-{{ user.id }}">{{ user.full_name }}</label>
+            </div>
+            {% endfor %}
+            {% if not users %}
+                <p style="color: red;">ไม่พบรายชื่อพนักงาน! กรุณาไปที่ <a href="/setup-demo">/setup-demo</a> ก่อน</p>
+            {% endif %}
+        </div>
+        
+        <button type="submit" {% if not users %}disabled{% endif %}>สร้างตาราง OT และรับลิงก์</button>
+    </form>
+    
+    <hr>
+    <div id="result">
+        </div>
+    <br>
+    <a href="/admin">กลับไปหน้า Dashboard หลัก</a>
+
+    <script>
+        document.getElementById('create-ot-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const otDate = document.getElementById('ot-date').value;
+            const checkedBoxes = document.querySelectorAll('input[name="user_ids"]:checked');
+            const userIds = Array.from(checkedBoxes).map(cb => parseInt(cb.value));
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p>กำลังสร้าง...</p>';
+            
+            if (!otDate || userIds.length === 0) {
+                resultDiv.innerHTML = '<p style="color: red;">กรุณาเลือกวันที่และพนักงานอย่างน้อย 1 คน</p>';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/create-schedule', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        date: otDate,
+                        user_ids: userIds
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    resultDiv.innerHTML = `<p style="color: red;"><b>เกิดข้อผิดพลาด:</b> ${data.error || 'ไม่สามารถติดต่อ Server'}</p>`;
+                } else {
+                    let linksHtml = '<h3>ลิงก์สำหรับส่งให้พนักงาน:</h3><ul>';
+                    data.links.forEach(item => {
+                        // สร้าง URL แบบเต็ม (เผื่อ Admin copy ไปวางที่อื่น)
+                        const fullUrl = `${window.location.origin}${item.link}`;
+                        linksHtml += `
+                            <li>
+                                <b>${item.name}:</b> 
+                                <a href="${item.link}" target="_blank">${fullUrl}</a>
+                            </li>`;
+                    });
+                    linksHtml += '</ul>';
+                    
+                    resultDiv.innerHTML = `
+                        <h2 style="color: green;">${data.message}</h2>
+                        <p>(ระบบได้แจ้งเตือนเข้ากลุ่ม LINE แล้ว)</p>
+                        ${linksHtml}
+                        <hr>
+                        <a href="/admin?schedule_id=${data.schedule_id}">ไปที่หน้า Dashboard เพื่อดูผลลัพธ์</a>
+                    `;
+                    // ล้างฟอร์ม
+                    document.getElementById('create-ot-form').reset();
+                }
+                
+            } catch (err) {
+                resultDiv.innerHTML = `<p style="color: red;"><b>เกิดข้อผิดพลาดในการเชื่อมต่อ:</b> ${err.message}</p>`;
+            }
+        });
+    </script>
+</body>
+</html>

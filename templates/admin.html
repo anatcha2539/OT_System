@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        h1, h2 { color: #333; }
+        .create-link {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 0.8em 1.2em;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 1.1em;
+            margin-bottom: 1em;
+        }
+        table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .status-confirmed { color: green; font-weight: bold; }
+        .status-declined { color: red; font-weight: bold; }
+        .status-pending { color: orange; font-weight: bold; }
+        .admin-note { font-style: italic; color: #555; }
+    </style>
+</head>
+<body>
+    <h1>Admin Dashboard</h1>
+    
+    <a href="/admin/create" class="create-link">➕ สร้างตาราง OT ใหม่</a>
+    <hr>
+
+    <h2>เลือกตาราง OT ที่ต้องการดูผลลัพธ์</h2>
+    <form method="GET" action="/admin" id="schedule-select-form">
+        <select name="schedule_id" onchange="this.form.submit()">
+            {% if not all_schedules %}
+                <option value="">-- ยังไม่มีการสร้างตาราง OT --</option>
+            {% endif %}
+            {% for sched in all_schedules %}
+                <option value="{{ sched.id }}" 
+                        {% if selected_schedule and selected_schedule.id == sched.id %}selected{% endif %}>
+                    วันที่: {{ sched.ot_date.strftime('%d/%m/%Y') }} (มี {{ sched.responses|length }} คน)
+                </option>
+            {% endfor %}
+        </select>
+        <noscript><button type="submit">โหลด</button></noscript>
+    </form>
+
+    {% if selected_schedule %}
+        <h2>ผลการตอบรับ (สำหรับวันที่ {{ selected_schedule.ot_date.strftime('%d %B %Y') }})</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>พนักงาน (สิทธิ์หลัก)</th>
+                    <th>สถานะ</th>
+                    <th>รายละเอียด (ตัวแทน / Admin)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for response in responses %}
+                    <tr>
+                        <td>{{ response.primary_user.full_name }}</td>
+                        
+                        {% if response.response_status == 'confirmed' %}
+                            <td class="status-confirmed">✅ ยืนยัน (มาทำ)</td>
+                            <td>-</td>
+                        
+                        {% elif response.response_status == 'declined' %}
+                            <td class="status-declined">❌ สละสิทธิ์</td>
+                            <td>
+                                {% if response.delegated_user %}
+                                    มอบสิทธิ์ให้: <b>{{ response.delegated_user.full_name }}</b>
+                                {% elif response.let_admin_decide %}
+                                    <span class="admin-note">ให้ Admin เลือกแทน</span>
+                                {% else %}
+                                    <span class="admin-note">(ไม่ระบุ)</span>
+                                {% endif %}
+                            </td>
+
+                        {% else %}
+                            <td class="status-pending">⌛ รอการตอบรับ</td>
+                            <td>-</td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>กรุณาเลือกตาราง OT ที่ต้องการดู หรือ <a href="/admin/create">สร้างตาราง OT ใหม่</a></p>
+    {% endif %}
+
+</body>
+</html>
