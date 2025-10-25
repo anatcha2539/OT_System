@@ -15,7 +15,7 @@ from linebot.exceptions import LineBotApiError
 app = Flask(__name__)
 basedir = os.path.abspath(os.path.dirname(__file__))
 #app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'ot_database.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgres://your_user:your_pass@your_host/your_db_name'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://your_user:your_pass@your_host/your_db_name'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
