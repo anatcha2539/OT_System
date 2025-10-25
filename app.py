@@ -205,6 +205,20 @@ def submit_ot_response():
 
 # FIX 2.3: ลบส่วนที่ซ้ำซ้อน (import redirect, route /survey) ที่เคยอยู่ตรงนี้ออกไป
 
+# <<< (ชั่วคราว) Route ลับสำหรับสร้างตาราง DB >>>
+@app.route('/admin/force-create-tables')
+def force_create_tables():
+    try:
+        db.create_all()
+        return "Tables created successfully! You can remove this route now."
+    except Exception as e:
+        return f"An error occurred: {str(e)}"
+
+
+# <<< (ใหม่) หน้าสำหรับสร้างตาราง OT >>>
+@app.route('/admin/create')
+def admin_create_page():
+
 # --- (ส่วนของ Admin) ---
 # (ส่วนนี้ถูกต้องสมบูรณ์ ไม่มีการแก้ไข)
 
