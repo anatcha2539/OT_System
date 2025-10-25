@@ -2,6 +2,7 @@
 import os
 import uuid
 from flask import Flask, request, jsonify, render_template, url_for
+from flask import redirect
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, date
 
@@ -188,6 +189,19 @@ def submit_ot_response():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
+
+# --- 3. สร้าง API Endpoints ---
+
+from flask import redirect # <-- เพิ่ม import นี้ไว้บนสุดของไฟล์ด้วยนะครับ
+
+@app.route('/')
+def index():
+    # เมื่อคนเข้าหน้าหลัก ให้ส่งไปหน้า /admin อัตโนมัติ
+    return redirect(url_for('admin_dashboard'))
+
+# (Endpoint /survey/... และ /api/survey-data/... เหมือนเดิม)
+@app.route('/survey/<string:token>')
 
 # --- (ส่วนของ Admin) ---
 
