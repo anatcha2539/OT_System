@@ -5,96 +5,179 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Dashboard</title>
     <style>
-        body { font-family: sans-serif; margin: 2em; }
-        h1, h2 { color: #333; }
-        .create-link {
-            display: inline-block;
-            background: #28a745;
-            color: white;
-            padding: 0.8em 1.2em;
-            text-decoration: none;
-            border-radius: 5px;
-            font-size: 1.1em;
-            margin-bottom: 1em;
+        /* (CSS นี้เป็นเพียงตัวอย่างให้หน้าเว็บดูง่ายขึ้น) */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            margin: 0; 
+            background-color: #f8f9fa; 
+            color: #333;
         }
-        table { width: 100%; border-collapse: collapse; margin-top: 1em; }
-        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .status-confirmed { color: green; font-weight: bold; }
-        .status-declined { color: red; font-weight: bold; }
-        .status-pending { color: orange; font-weight: bold; }
-        .admin-note { font-style: italic; color: #555; }
+        .container { 
+            max-width: 1200px; 
+            margin: 20px auto; 
+            padding: 20px; 
+            background-color: #ffffff; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05); 
+        }
+        h1, h2 { color: #0056b3; }
+        nav { 
+            background: #f1f3f5; 
+            padding: 1em; 
+            border-radius: 5px; 
+            margin-bottom: 2em; 
+        }
+        nav a { 
+            margin-right: 1.5em; 
+            text-decoration: none; 
+            color: #007bff; 
+            font-weight: 500; 
+            font-size: 1.1em;
+        }
+        nav strong { font-size: 1.1em; color: #000; }
+        
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin-top: 20px;
+        }
+        th, td { 
+            border: 1px solid #dee2e6; 
+            padding: 12px; 
+            text-align: left; 
+        }
+        th { 
+            background-color: #f1f3f5; 
+            font-weight: 600;
+        }
+        tr:nth-child(even) { background-color: #f8f9fa; }
+
+        .dropdown-form { margin-bottom: 1.5em; font-size: 1.1em; }
+        .dropdown-form select { padding: 5px; font-size: 1em; }
+
+        .header-flex {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .delete-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 0.9em;
+            font-weight: 500;
+        }
+        .delete-btn:hover { background-color: #c82333; }
+
+        /* สไตล์สำหรับสถานะ */
+        .status-pending { color: #868e96; font-style: italic; }
+        .status-confirmed { color: #28a745; font-weight: bold; }
+        .status-declined { color: #dc3545; font-weight: bold; }
     </style>
 </head>
 <body>
-    <h1>Admin Dashboard</h1>
-    <nav>
-    <a href="{{ url_for('admin_dashboard') }}">Dashboard</a> |
-    <a href="{{ url_for('admin_create_page') }}">สร้างตาราง OT</a> |
-    <strong><a href="{{ url_for('admin_users_page') }}">จัดการผู้ใช้งาน</a></strong>
-</nav>
-    
-    <a href="/admin/create" class="create-link">➕ สร้างตาราง OT ใหม่</a>
-    <hr>
+    <div class="container">
+        <h1>Admin Dashboard</h1>
 
-    <h2>เลือกตาราง OT ที่ต้องการดูผลลัพธ์</h2>
-    <form method="GET" action="/admin" id="schedule-select-form">
-        <select name="schedule_id" onchange="this.form.submit()">
-            {% if not all_schedules %}
-                <option value="">-- ยังไม่มีการสร้างตาราง OT --</option>
-            {% endif %}
-            {% for sched in all_schedules %}
-                <option value="{{ sched.id }}" 
-                        {% if selected_schedule and selected_schedule.id == sched.id %}selected{% endif %}>
-                    วันที่: {{ sched.ot_date.strftime('%d/%m/%Y') }} (มี {{ sched.responses|length }} คน)
-                </option>
-            {% endfor %}
-        </select>
-        <noscript><button type="submit">โหลด</button></noscript>
-    </form>
+        <nav>
+            <strong>Dashboard</strong> |
+            <a href="{{ url_for('admin_create_page') }}">สร้างตาราง OT</a> |
+            <a href="{{ url_for('admin_users_page') }}">จัดการผู้ใช้งาน</a>
+        </nav>
 
-    {% if selected_schedule %}
-        <h2>ผลการตอบรับ (สำหรับวันที่ {{ selected_schedule.ot_date.strftime('%d %B %Y') }})</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>พนักงาน (สิทธิ์หลัก)</th>
-                    <th>สถานะ</th>
-                    <th>รายละเอียด (ตัวแทน / Admin)</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for response in responses %}
+        <div class="dropdown-form">
+            <form method="GET" action="{{ url_for('admin_dashboard') }}">
+                <label for="schedule_id"><strong>เลือกดูตาราง OT ของวันที่:</strong></label>
+                <select name="schedule_id" id="schedule_id" onchange="this.form.submit()">
+                    <option value="">-- กรุณาเลือกวันที่ --</option>
+                    {% for schedule in all_schedules %}
+                        <option value="{{ schedule.id }}" 
+                                {% if selected_schedule and selected_schedule.id == schedule.id %}selected{% endif %}>
+                            {{ schedule.ot_date.strftime('%d/%m/%Y') }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <noscript><button type="submit">โหลดข้อมูล</button></noscript>
+            </form>
+        </div>
+
+        <hr>
+
+        {% if selected_schedule %}
+            
+            <div class="header-flex">
+                <h2>
+                    ผลลัพธ์สำหรับ: {{ selected_schedule.ot_date.strftime('%d/%m/%Y') }}
+                </h2>
+                
+                <form action="{{ url_for('delete_schedule', schedule_id=selected_schedule.id) }}" 
+                      method="POST" 
+                      style="margin: 10px 0;">
+                    <button type="submit" 
+                            class="delete-btn"
+                            onclick="return confirm('คุณแน่ใจหรือไม่ว่าต้องการลบตาราง OT วันที่ {{ selected_schedule.ot_date.strftime('%d/%m/%Y') }}?\n\n*** การกระทำนี้จะลบข้อมูลการตอบรับทั้งหมดของวันนี้อย่างถาวร ***')">
+                        🗑️ ลบตารางนี้
+                    </button>
+                </form>
+            </div>
+
+            <table>
+                <thead>
                     <tr>
-                        <td>{{ response.primary_user.full_name }}</td>
+                        <th style="width: 20%;">พนักงาน (สิทธิ์หลัก)</th>
+                        <th style="width: 15%;">สถานะ</th>
+                        <th>รายละเอียด (ผู้รับมอบสิทธิ์ / Admin)</th>
+                        <th style="width: 30%;">ลิงก์ Survey (สำหรับแจกจ่าย)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for res in responses %}
+                    <tr>
+                        <td>{{ res.primary_user.full_name }}</td>
                         
-                        {% if response.response_status == 'confirmed' %}
-                            <td class="status-confirmed">✅ ยืนยัน (มาทำ)</td>
+                        {% if res.response_status == 'pending' %}
+                            <td class="status-pending"><strong>รอการตอบรับ</strong></td>
                             <td>-</td>
-                        
-                        {% elif response.response_status == 'declined' %}
+                        {% elif res.response_status == 'confirmed' %}
+                            <td class="status-confirmed">✅ ยืนยัน</td>
+                            <td>-</td>
+                        {% elif res.response_status == 'declined' %}
                             <td class="status-declined">❌ สละสิทธิ์</td>
                             <td>
-                                {% if response.delegated_user %}
-                                    มอบสิทธิ์ให้: <b>{{ response.delegated_user.full_name }}</b>
-                                {% elif response.let_admin_decide %}
-                                    <span class="admin-note">ให้ Admin เลือกแทน</span>
+                                {% if res.delegated_user %}
+                                    มอบสิทธิ์ให้ ➡️ <strong>{{ res.delegated_user.full_name }}</strong>
+                                {% elif res.let_admin_decide %}
+                                    <i>(แจ้งให้ Admin จัดการ)</i>
                                 {% else %}
-                                    <span class="admin-note">(ไม่ระบุ)</span>
+                                    <i>(ปฏิเสธโดยไม่เลือกตัวแทน)</i>
                                 {% endif %}
                             </td>
-
-                        {% else %}
-                            <td class="status-pending">⌛ รอการตอบรับ</td>
-                            <td>-</td>
                         {% endif %}
+                        
+                        <td>
+                            <input type="text" 
+                                   value="{{ url_for('show_survey', token=res.token, _external=True) }}" 
+                                   readonly 
+                                   style="width: 95%; padding: 5px;">
+                        </td>
                     </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% else %}
-        <p>กรุณาเลือกตาราง OT ที่ต้องการดู หรือ <a href="/admin/create">สร้างตาราง OT ใหม่</a></p>
-    {% endif %}
+                    {% else %}
+                    <tr>
+                        <td colspan="4" style="text-align: center;">ยังไม่มีรายชื่อพนักงานสำหรับตารางนี้</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
 
-</body>
+        {% else %}
+            <h3>ยังไม่มีตาราง OT ที่เลือก</h3>
+            <p>กรุณาเลือกตาราง OT จากเมนูด้านบน หรือ <a href="{{ url_for('admin_create_page') }}">สร้างตารางใหม่</a></p>
+        {% endif %}
+    
+    </div> </body>
 </html>

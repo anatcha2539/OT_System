@@ -292,10 +292,30 @@ def edit_user(user_id):
         return jsonify({"error": str(e)}), 500
 
 
+# (ใหม่) API สำหรับลบตาราง OT และการตอบรับที่เกี่ยวข้องทั้งหมด
+@app.route('/admin/delete-schedule/<int:schedule_id>', methods=['POST'])
+def delete_schedule(schedule_id):
+    try:
+        # 1. ค้นหาตาราง OT ที่ต้องการลบ
+        schedule = OTSchedule.query.get_or_404(schedule_id)
+        
+        # 2. (สำคัญมาก) ลบการตอบรับ (OTResponse) ทั้งหมด
+        #    ที่ผูกอยู่กับตารางนี้ก่อน (ไม่อย่างนั้น DB จะ error)
+        OTResponse.query.filter_by(schedule_id=schedule_id).delete()
+        
+        # 3. เมื่อลูก (Response) ถูกลบหมดแล้ว ก็ลบแม่ (Schedule)
+        db.session.delete(schedule)
+        
+        # 4. ยืนยันการเปลี่ยนแปลง
+        db.session.commit()
+        
+        # กลับไปหน้า Dashboard
+        return redirect(url_for('admin_dashboard'))
+        
+    except Exception as e:
+        db.session.rollback()
+        return f"เกิดข้อผิดพลาดในการลบตาราง: {str(e)}"
 
-# <<< (ใหม่) หน้าสำหรับสร้างตาราง OT >>>
-# --- (ส่วนของ Admin) ---
-# (ส่วนนี้ถูกต้องสมบูรณ์ ไม่มีการแก้ไข)
 
 @app.route('/admin/create')
 def admin_create_page():
