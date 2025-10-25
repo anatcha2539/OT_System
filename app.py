@@ -208,6 +208,9 @@ def logout():
     return redirect(url_for('login'))
 
 # (สำคัญ!) Route ลับสำหรับ "สร้าง Admin คนแรก"
+#@app.route('/admin/create-first-admin')
+#def create_first_admin():
+#    try:
 @app.route('/admin/create-first-admin')
 def create_first_admin():
     try:
@@ -343,10 +346,13 @@ def submit_ot_response():
 
 # --- 3.3 ส่วนของ Admin (ต้อง Login) ---
 
+#@app.route('/admin/force-create-tables')
+#@login_required
+#def force_create_tables():
+#    if not current_user.is_admin: abort(403)
+#    try:
 @app.route('/admin/force-create-tables')
-@login_required
 def force_create_tables():
-    if not current_user.is_admin: abort(403)
     try:
         db.drop_all()
         db.create_all()
