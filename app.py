@@ -1,8 +1,8 @@
-# app.py (เวอร์ชันอัปเดต - Admin สร้าง Schedule เองได้)
+# app.py (เวอร์ชันแก้ไขสมบูรณ์ 25/10/2025)
 import os
 import uuid
-from flask import Flask, request, jsonify, render_template, url_for
-from flask import redirect
+# FIX 2.1: เพิ่ม redirect ไว้ที่ import หลัก
+from flask import Flask, request, jsonify, render_template, url_for, redirect
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, date
 
@@ -14,14 +14,21 @@ from linebot.exceptions import LineBotApiError
 # --- 1. ตั้งค่าพื้นฐาน ---
 app = Flask(__name__)
 basedir = os.path.abspath(os.path.dirname(__file__))
-#app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'ot_database.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://ot_db_4rc9_user:To4O5VxjD0nv38ZLKxjcdWti0M90WM9T@dpg-d3u31nmuk2gs73di6tl0-a/ot_db_4rc9'
+
+# FIX 3.1: ใช้ Environment Variable สำหรับ DATABASE_URL
+# (โค้ดของคุณจะ "สะอาด" ไม่มีรหัสผ่าน)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# === (สำคัญ) ใส่ Token และ ID ที่คุณหามาได้ ===
-YOUR_CHANNEL_ACCESS_TOKEN = 'PL/avKB7pIC6D5K7uBhC0QysgPldURTehkZwRf7cj0FiIOEoYR6sNucNCc17heM1ckcN2cToU37xsaBbya94PF3N/ad32wz1Eg3b1+cTUR1EV8f8fzGYI0C+81vgkbM810Lrdl/nX49dPYwY6hehbQdB04t89/1O/w1cDnyilFU=' 
-YOUR_TARGET_GROUP_ID = 'C73261ee748ea4c2e8af5033c68a7fd97'
+# FIX 1: ย้าย db.create_all() มาไว้ตรงนี้
+# (เพื่อให้ Gunicorn เรียกใช้งานตอนเริ่มเซิร์ฟเวอร์)
+with app.app_context():
+    db.create_all()
+
+# FIX 3.2: ใช้ Environment Variables สำหรับ LINE Tokens
+YOUR_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+YOUR_TARGET_GROUP_ID = os.environ.get('LINE_TARGET_GROUP_ID')
 # ===================================================
 
 # --- 1.2 สร้าง Instance ของ LineBotApi ---
@@ -36,8 +43,9 @@ def send_line_push_message(message_text):
     if not line_bot_api:
         print("ไม่สามารถส่ง LINE ได้: LineBotApi ไม่ได้ถูกตั้งค่า")
         return False
-    if YOUR_TARGET_GROUP_ID == 'PASTE_YOUR_GROUP_ID_HERE':
-        print("ไม่สามารถส่ง LINE ได้: กรุณาตั้งค่า YOUR_TARGET_GROUP_ID")
+    # (ปรับปรุงเล็กน้อย) เช็กว่ามี ID กลุ่มหรือไม่
+    if not YOUR_TARGET_GROUP_ID:
+        print("ไม่สามารถส่ง LINE ได้: กรุณาตั้งค่า LINE_TARGET_GROUP_ID")
         return False
     try:
         message = TextSendMessage(text=message_text)
@@ -52,7 +60,7 @@ def send_line_push_message(message_text):
         return False
 
 # --- 2. สร้างโมเดลฐานข้อมูล ---
-# (ส่วน Model User, OTSchedule, OTResponse เหมือนเดิมทุกประการ)
+# (ส่วนนี้ถูกต้องสมบูรณ์ ไม่มีการแก้ไข)
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -80,8 +88,13 @@ class OTResponse(db.Model):
 
 # --- 3. สร้าง API Endpoints ---
 
-# (Endpoint /survey/... และ /api/survey-data/... เหมือนเดิม)
+# FIX 2.2: วาง Route / (Homepage) ไว้ที่นี่
+@app.route('/')
+def index():
+    # เมื่อคนเข้าหน้าหลัก ให้ส่งไปหน้า /admin อัตโนมัติ
+    return redirect(url_for('admin_dashboard'))
 
+# (Endpoint /survey/... และ /api/survey-data/... เหมือนเดิม)
 @app.route('/survey/<string:token>')
 def show_survey(token):
     response = OTResponse.query.filter_by(token=token).first_or_404()
@@ -120,7 +133,6 @@ def get_survey_data(response_id):
     })
 
 # (Endpoint /submit-ot-response เหมือนเดิม)
-
 @app.route('/submit-ot-response', methods=['POST'])
 def submit_ot_response():
     data = request.json
@@ -191,27 +203,16 @@ def submit_ot_response():
         return jsonify({"error": str(e)}), 500
 
 
-# --- 3. สร้าง API Endpoints ---
-
-from flask import redirect # <-- เพิ่ม import นี้ไว้บนสุดของไฟล์ด้วยนะครับ
-
-@app.route('/')
-def index():
-    # เมื่อคนเข้าหน้าหลัก ให้ส่งไปหน้า /admin อัตโนมัติ
-    return redirect(url_for('admin_dashboard'))
-
-# (Endpoint /survey/... และ /api/survey-data/... เหมือนเดิม)
-@app.route('/survey/<string:token>')
+# FIX 2.3: ลบส่วนที่ซ้ำซ้อน (import redirect, route /survey) ที่เคยอยู่ตรงนี้ออกไป
 
 # --- (ส่วนของ Admin) ---
+# (ส่วนนี้ถูกต้องสมบูรณ์ ไม่มีการแก้ไข)
 
-# <<< (ใหม่) หน้าสำหรับสร้างตาราง OT >>>
 @app.route('/admin/create')
 def admin_create_page():
     all_users = User.query.order_by(User.full_name).all()
     return render_template('create_schedule.html', users=all_users)
 
-# <<< (ใหม่) API สำหรับรับข้อมูลการสร้างตาราง OT >>>
 @app.route('/api/create-schedule', methods=['POST'])
 def create_schedule():
     data = request.json
@@ -224,17 +225,14 @@ def create_schedule():
     try:
         ot_date = datetime.strptime(ot_date_str, '%Y-%m-%d').date()
 
-        # ตรวจสอบว่าวันที่นี้ถูกสร้างไปแล้วหรือยัง
         existing_schedule = OTSchedule.query.filter_by(ot_date=ot_date).first()
         if existing_schedule:
             return jsonify({"error": f"มีตาราง OT สำหรับวันที่ {ot_date_str} อยู่แล้ว"}), 400
 
-        # 1. สร้าง Schedule
         new_schedule = OTSchedule(ot_date=ot_date)
         db.session.add(new_schedule)
-        db.session.commit() # Commit เพื่อให้ได้ new_schedule.id
+        db.session.commit() 
 
-        # 2. สร้าง OTResponse สำหรับแต่ละคนที่ถูกเลือก
         created_responses = []
         user_map = {u.id: u.full_name for u in User.query.filter(User.id.in_(primary_user_ids)).all()}
         
@@ -243,18 +241,16 @@ def create_schedule():
             db.session.add(response)
             created_responses.append(response)
         
-        db.session.commit() # Commit responses ทั้งหมด
+        db.session.commit() 
 
-        # 3. เตรียมข้อมูลลิงก์เพื่อส่งกลับให้ Admin
         links_for_admin = []
         for resp in created_responses:
             user_name = user_map.get(resp.primary_user_id, "(ไม่พบชื่อ)")
             links_for_admin.append({
                 "name": user_name,
-                "link": url_for('show_survey', token=resp.token) # สร้าง URL ให้
+                "link": url_for('show_survey', token=resp.token) 
             })
 
-        # 4. (Optional) ส่งข้อความแจ้งเตือนเข้ากลุ่ม LINE
         names_list = "\n".join([f"- {name}" for name in user_map.values()])
         message_to_group = (
             f"📢 สร้างตาราง OT ใหม่ 📢\n"
@@ -274,41 +270,31 @@ def create_schedule():
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-
-# <<< (แก้ไข) หน้า Dashboard หลักของ Admin >>>
 @app.route('/admin')
 def admin_dashboard():
-    # ดึงตาราง OT ทั้งหมด เรียงจากใหม่ไปเก่า
     all_schedules = OTSchedule.query.order_by(OTSchedule.ot_date.desc()).all()
-    
-    # ตรวจสอบว่า User ขอ Schedule ID ไหนมา (จาก query string)
     schedule_id_to_show = request.args.get('schedule_id', type=int)
-    
     selected_schedule = None
     
     if schedule_id_to_show:
-        # ถ้าขอมา ให้ query อันนั้น
         selected_schedule = OTSchedule.query.get(schedule_id_to_show)
     elif all_schedules:
-        # ถ้าไม่ได้ขอมา (เข้าหน้า /admin เฉยๆ) ให้แสดงอันล่าสุด
         selected_schedule = all_schedules[0] 
     
-    # เตรียมข้อมูล responses ถ้ามี schedule ที่เลือก
     responses = []
     if selected_schedule:
         responses = selected_schedule.responses
 
     return render_template('admin.html', 
-                           all_schedules=all_schedules,       # ส่งตารางทั้งหมดไปให้ Dropdown
-                           selected_schedule=selected_schedule, # ส่งตารางที่เลือก
-                           responses=responses                  # ส่ง responses ของตารางที่เลือก
+                           all_schedules=all_schedules,      
+                           selected_schedule=selected_schedule, 
+                           responses=responses              
                           )
 
-# <<< (แก้ไข) หน้า /setup-demo จะเหลือแค่สร้าง User เท่านั้น >>>
 @app.route('/setup-demo')
 def setup_demo():
     try:
-        # ลบข้อมูลเก่าทั้งหมด
+        # ลบข้อมูลเก่าทั้งหมด (เรียงลำดับถูกต้อง)
         db.session.query(OTResponse).delete()
         db.session.query(OTSchedule).delete()
         db.session.query(User).delete()
@@ -337,6 +323,5 @@ def setup_demo():
 
 # --- 4. ส่วนสำหรับรัน Server ---
 if __name__ == '__main__':
-    with app.app_context(): 
-        db.create_all()
+    # FIX 1.2: ลบ db.create_all() ออกจากตรงนี้
     app.run(debug=True, port=5000)
