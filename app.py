@@ -644,6 +644,64 @@ def reject_substitute(response_id):
     
     return redirect(url_for('admin_dashboard', schedule_id=response.schedule_id))
 
+# (วางโค้ดนี้ไว้ก่อน @app.route('/admin') )
+
+@app.route('/admin/assign-substitute/<int:response_id>', methods=['POST'])
+@login_required
+def assign_substitute(response_id):
+    if not current_user.is_admin: abort(403)
+    response = OTResponse.query.get_or_404(response_id)
+    
+    # ตรวจสอบว่าสถานะถูกต้อง (คือ Admin ต้องเลือก)
+    if response.response_status not in ['declined_admin', 'sub_declined']:
+        flash("ไม่สามารถมอบหมายได้ (สถานะไม่ถูกต้อง)", "danger")
+        return redirect(url_for('admin_dashboard', schedule_id=response.schedule_id))
+        
+    try:
+        sub_user_id = int(request.form['user_id'])
+        sub_user = User.query.get(sub_user_id)
+        
+        if not sub_user:
+             flash("ไม่พบพนักงานที่เลือก", "danger")
+             return redirect(url_for('admin_dashboard', schedule_id=response.schedule_id))
+
+        # (สำคัญ) ตรวจสอบอีกครั้งว่า User ที่เลือกมา "ว่าง" จริงๆ
+        # (กัน Admin 2 คนเลือกชนกัน)
+        existing_assignment = OTResponse.query.filter(
+            OTResponse.schedule_id == response.schedule_id,
+            (OTResponse.delegated_to_user_id == sub_user_id) & 
+            (OTResponse.response_status.in_(['delegated', 'sub_confirmed']))
+        ).first()
+        
+        if existing_assignment:
+            flash(f"เลือกตัวแทนซ้ำ! ({sub_user.full_name} ถูกเลือกไปแล้ว)", "danger")
+            return redirect(url_for('admin_dashboard', schedule_id=response.schedule_id))
+
+        # --- อัปเดตสถานะ ---
+        response.delegated_to_user_id = sub_user_id
+        response.response_status = 'sub_confirmed' # ยืนยันเลย (เพราะ Admin เป็นคนเลือกเอง)
+        response.let_admin_decide = False
+        db.session.commit()
+        
+        # --- แจ้งเตือน LINE ---
+        ot_date_str = response.schedule.ot_date.strftime('%d/%m/%Y')
+        message_to_group = (
+            f"✅ Admin มอบหมาย OT ({ot_date_str}) ✅\n"
+            f"จาก: คุณ {response.primary_user.full_name} (สละสิทธิ์)\n"
+            f"มอบหมายให้: คุณ {sub_user.full_name} (ยืนยันมาแน่นอน)\n"
+            f"(Admin: {current_user.full_name})"
+        )
+        send_line_push_message(message_to_group)
+        flash(f"มอบหมายให้ {sub_user.full_name} เรียบร้อยแล้ว", "success")
+
+    except Exception as e:
+        db.session.rollback()
+        flash(f"เกิดข้อผิดพลาด: {str(e)}", "danger")
+
+    return redirect(url_for('admin_dashboard', schedule_id=response.schedule_id))
+
+# (วางทับโค้ดเดิมที่บรรทัด 627)
+
 @app.route('/admin')
 @login_required
 def admin_dashboard():
@@ -655,7 +713,9 @@ def admin_dashboard():
     
     selected_schedule = None
     error_message = None 
-    
+    responses = []
+    available_substitutes = [] # (ใหม่) สร้างตัวแปรว่างไว้ก่อน
+
     try:
         if schedule_id_to_show:
             selected_schedule = OTSchedule.query.get(schedule_id_to_show)
@@ -669,20 +729,49 @@ def admin_dashboard():
         elif all_schedules:
             selected_schedule = all_schedules[0] 
             
+        
+        # (ใหม่) เพิ่ม Logic นี้เข้าไปใน try...except
+        if selected_schedule:
+            responses = selected_schedule.responses
+            
+            # --- เริ่มส่วนที่เพิ่มใหม่ ---
+            
+            # 1. ค้นหา User ID ที่ "ไม่ว่าง" ทั้งหมดในตารางนี้
+            
+            # (กลุ่ม 1) คนที่มีสิทธิ์หลักในตารางนี้ (ทุกคน)
+            all_primary_user_ids = [r.primary_user_id for r in responses]
+            
+            # (กลุ่ม 2) คนที่ถูกมอบสิทธิ์ และ "ยืนยันแล้ว" หรือ "กำลังรอ"
+            all_delegated_user_ids = [
+                r.delegated_to_user_id for r in responses 
+                if r.delegated_to_user_id is not None and 
+                   r.response_status in ['delegated', 'sub_confirmed']
+            ]
+            
+            # รวม 2 กลุ่มนี้ คือคนที่ "ไม่ว่าง"
+            excluded_user_ids = all_primary_user_ids + all_delegated_user_ids
+            
+            # 2. ค้นหา User ที่ "ว่าง"
+            available_substitutes = User.query.filter(
+                User.id.notin_(excluded_user_ids),
+                User.is_admin == False # ไม่เอา Admin
+            ).order_by(User.full_name).all()
+            
+            # --- จบส่วนที่เพิ่มใหม่ ---
+            
     except ValueError:
         error_message = "รูปแบบวันที่ไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)"
     except Exception as e:
         error_message = f"เกิดข้อผิดพลาด: {str(e)}"
 
-    responses = []
-    if selected_schedule:
-        responses = selected_schedule.responses
-
+    # (อัปเกรด) ส่ง available_substitutes เพิ่มเข้าไป
     return render_template('admin.html', 
                            all_schedules=all_schedules,
                            selected_schedule=selected_schedule,
                            responses=responses,
-                           error_message=error_message 
+                           available_substitutes=available_substitutes, # (ใหม่)
+                           error_message=error_message,
+                           search_date_str=search_date_str # (ใหม่) ส่งค่า search_date กลับไปด้วย
                            )
 
 @app.route('/setup-demo')

@@ -2,262 +2,279 @@
 
 {% block content %}
 <div class="card shadow-sm border-0">
-  <div class="card-header bg-white pb-0 border-0">
-    <h3 class="mb-0"><i class="bi bi-bar-chart-fill"></i> Dashboard (สรุปผล OT)</h3>
-    <hr>
-  </div>
-  <div class="card-body">
+  <div class="card-header bg-white pb-0 border-0">
+    <h3 class="mb-0"><i class="bi bi-bar-chart-fill"></i> Dashboard (สรุปผล OT)</h3>
+    <hr>
+  </div>
+  <div class="card-body">
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-          </div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-    {% if error_message %}
-      <div class="alert alert-danger">{{ error_message }}</div>
-    {% endif %}
-    
-    <div class="row g-3 mb-4 p-3 bg-light rounded border">
-      <div class="col-md-6">
-        <label for="schedule_id" class="form-label fw-bold">เลือกดูตาราง OT เก่า</label>
-        <form method="GET" action="{{ url_for('admin_dashboard') }}" id="selectForm">
-          <select class="form-select" id="schedule_id" name="schedule_id" onchange="document.getElementById('selectForm').submit();">
-            <option value="" disabled {% if not selected_schedule %}selected{% endif %}>
-              -- กรุณาเลือกวันที่ --
-            </option>
-            {% for s in all_schedules %}
-              <option value="{{ s.id }}" {% if selected_schedule and selected_schedule.id == s.id %}selected{% endif %}>
-                วันที่ {{ s.ot_date.strftime('%d/%m/%Y') }} (สร้างเมื่อ: {{ s.created_at.strftime('%Y-%m-%d %H:%M') }})
-              </option>
-            {% endfor %}
-          </select>
-        </form>
-      </div>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% if error_message %}
+      <div class="alert alert-danger">{{ error_message }}</div>
+    {% endif %}
+    
+        <div class="row g-3 mb-4 p-3 bg-light rounded border">
+      <div class="col-md-6">
+        <label for="schedule_id" class="form-label fw-bold">เลือกดูตาราง OT เก่า</label>
+        <form method="GET" action="{{ url_for('admin_dashboard') }}" id="selectForm">
+          <select class="form-select" id="schedule_id" name="schedule_id" onchange="document.getElementById('selectForm').submit();">
+            <option value="" disabled {% if not selected_schedule %}selected{% endif %}>
+              -- กรุณาเลือกวันที่ --
+            </option>
+            {% for s in all_schedules %}
+              <option value="{{ s.id }}" {% if selected_schedule and selected_schedule.id == s.id %}selected{% endif %}>
+                วันที่ {{ s.ot_date.strftime('%d/%m/%Y') }} (สร้างเมื่อ: {{ s.created_at.strftime('%Y-%m-%d %H:%M') }})
+              </option>
+            {% endfor %}
+          </select>
+        </form>
+      </div>
 
-      <div class="col-md-6">
-        <label for="search_date" class="form-label fw-bold">หรือ ค้นหาด้วยวันที่</label>
-        <form method="GET" action="{{ url_for('admin_dashboard') }}" class="input-group">
-          <input type="date" class="form-control" id="search_date" name="search_date" value="{{ request.args.get('search_date', '') }}">
-          <button class="btn btn-outline-primary" type="submit">
-            <i class="bi bi-search"></i> ค้นหา
-          </button>
-        </form>
-      </div>
-    </div>
+      <div class="col-md-6">
+        <label for="search_date" class="form-label fw-bold">หรือ ค้นหาด้วยวันที่</label>
+        <form method="GET" action="{{ url_for('admin_dashboard') }}" class="input-group">
+                    <input type="date" class="form-control" id="search_date" name="search_date" value="{{ search_date_str | default('', true) }}">
+          <button class="btn btn-outline-primary" type="submit">
+            <i class="bi bi-search"></i> ค้นหา
+          </button>
+        </form>
+      </div>
+    </div>
 
-    {% if selected_schedule %}
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4 class="mb-0">
-          ผลการตอบรับ OT วันที่: <span class="text-primary">{{ selected_schedule.ot_date.strftime('%d/%m/%Y') }}</span>
-        </h4>
-        
-        <form method="POST" 
-              action="{{ url_for('delete_schedule', schedule_id=selected_schedule.id) }}" 
-              onsubmit="return confirm('คุณแน่ใจหรือไม่ว่าต้องการลบตาราง OT นี้ (ข้อมูลการตอบรับทั้งหมดจะหายไป)?')">
-          <button type="submit" class="btn btn-sm btn-outline-danger">
-            <i class="bi bi-trash-fill"></i> ลบตาราง OT นี้
-          </button>
-        </form>
-      </div>
+    {% if selected_schedule %}
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">
+          ผลการตอบรับ OT วันที่: <span class="text-primary">{{ selected_schedule.ot_date.strftime('%d/%m/%Y') }}</span>
+        </h4>
+        
+        <form method="POST" 
+              action="{{ url_for('delete_schedule', schedule_id=selected_schedule.id) }}" 
+              onsubmit="return confirm('คุณแน่ใจหรือไม่ว่าต้องการลบตาราง OT นี้ (ข้อมูลการตอบรับทั้งหมดจะหายไป)?')">
+          <button type="submit" class="btn btn-sm btn-outline-danger">
+            <i class="bi bi-trash-fill"></i> ลบตาราง OT นี้
+          </button>
+        </form>
+      </div>
 
-      <div class="row text-center mb-4">
-        <div class="col-md-3">
-          <div class="card bg-light p-3 shadow-sm">
-            <h6 class="text-muted">ผู้มีสิทธิ์ OT ทั้งหมด</h6>
-            <h3 class="text-primary">{{ responses|length }}</h3>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="card bg-light p-3 shadow-sm">
-            <h6 class="text-muted">ตอบรับแล้ว</h6>
-            {% set total_confirmed = 
-                  (responses | selectattr('response_status', 'equalto', 'confirmed') | list | length) + 
-                  (responses | selectattr('response_status', 'equalto', 'sub_confirmed') | list | length) 
-            %}
-            <h3 class="text-success">{{ total_confirmed }}</h3>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="card bg-light p-3 shadow-sm">
-            <h6 class="text-muted">สละสิทธิ์ (รอคนแทน)</h6>
-            {% set total_declined = 
-                  (responses | selectattr('response_status', 'equalto', 'declined_admin') | list | length) + 
-                  (responses | selectattr('response_status', 'equalto', 'sub_declined') | list | length) 
-            %}
-            <h3 class="text-danger">{{ total_declined }}</h3>
-          </div>
-        </div>
-        <div class="col-md-3">
-          <div class="card bg-light p-3 shadow-sm">
-            <h6 class="text-muted">ยังไม่ตอบ / รอยืนยัน</h6>
-            {% set total_pending = 
-                  (responses | selectattr('response_status', 'equalto', 'pending') | list | length) + 
-                  (responses | selectattr('response_status', 'equalto', 'delegated') | list | length) 
-            %}
-            <h3 class="text-warning">{{ total_pending }}</h3>
-          </div>
-        </div>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-striped table-hover align-middle">
-          <thead class="table-light">
-            <tr>
-              <th scope="col">#</th>
-              <th scope="col">ชื่อ-สกุล (ผู้มีสิทธิ์หลัก)</th>
-              <th scope="col">สถานะ</th>
-              <th scope="col">ผู้รับแทน / หมายเหตุ</th>
-              <th scope="col">Action (สำหรับ Admin)</th> </tr>
-          </thead>
-          <tbody>
-            {% for r in responses %}
-            <tr class="
-              {% if r.response_status == 'confirmed' or r.response_status == 'sub_confirmed' %}
-                table-success
-              {% elif r.response_status == 'declined_admin' or r.response_status == 'sub_declined' %}
-                table-danger
-              {% elif r.response_status == 'delegated' %}
-                table-warning
-              {% elif r.response_status == 'pending' %}
-                table-secondary
-              {% endif %}
-            ">
-              <td>{{ loop.index }}</td>
-              <td>
-                <i class="bi bi-person-circle"></i>
-                {{ r.primary_user.full_name }}
-              </td>
-              <td>
-                {% if r.response_status == 'confirmed' %}
-                  <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> ยืนยัน (สิทธิ์หลัก)</span>
-                {% elif r.response_status == 'sub_confirmed' %}
-                  <span class="badge bg-success"><i class="bi bi-person-check-fill"></i> ยืนยัน (ตัวแทน)</span>
-                {% elif r.response_status == 'delegated' %}
-                  <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split"></i> รอยืนยันตัวแทน</span>
-                {% elif r.response_status == 'declined_admin' %}
-                  <span class="badge bg-danger"><i class="bi bi-x-circle-fill"></i> สละสิทธิ์ (Admin เลือก)</span>
-                {% elif r.response_status == 'sub_declined' %}
-                  <span class="badge bg-danger"><i class="bi bi-person-x-fill"></i> สละสิทธิ์ (ตัวแทนปฏิเสธ)</span>
-                {% else %} <span class="badge bg-secondary"><i class="bi bi-question-circle"></i> รอตอบรับ</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if r.delegated_user %}
-                  <span class="text-info">
-                    <i class="bi bi-arrow-right-short"></i> มอบให้: {{ r.delegated_user.full_name }}
-                  </span>
-                {% elif r.let_admin_decide %}
-                  <span class="text-muted">
-                    <i class="bi bi-person-fill-gear"></i> ให้ Admin เลือกแทน
-                  </span>
-                {% elif r.response_status == 'confirmed' %}
-                  <span class="text-success">- (มาด้วยตนเอง) -</span>
-                {% else %}
-                  <span class="text-muted">-</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if r.response_status == 'delegated' or r.response_status == 'sub_confirmed' or r.response_status == 'sub_declined' %}
-                  <form action="{{ url_for('confirm_substitute', response_id=r.id) }}" method="POST" class="d-inline-block mb-1">
-                    <button type="submit" class="btn btn-success btn-sm" data-bs-toggle="tooltip" title="ยืนยันว่าตัวแทนคนนี้มาแน่" {% if r.response_status == 'sub_confirmed' %}disabled{% endif %}>
-                      <i class="bi bi-check-lg"></i> ยืนยันตัวแทน
-                    </button>
-                  </form>
-                  <form action="{{ url_for('reject_substitute', response_id=r.id) }}" method="POST" class="d-inline-block">
-                    <button type="submit" class="btn btn-danger btn-sm" data-bs-toggle="tooltip" title="ตัวแทนไม่มา (ให้ Admin หาคนใหม่)" {% if r.response_status == 'sub_declined' %}disabled{% endif %}>
-                      <i class="bi bi-x-lg"></i> ปฏิเสธตัวแทน
-                    </button>
-                  </form>
+            <div class="row text-center mb-4">
+        <div class="col-md-3">
+          <div class="card bg-light p-3 shadow-sm">
+            <h6 class="text-muted">ผู้มีสิทธิ์ OT ทั้งหมด</h6>
+            <h3 class="text-primary">{{ responses|length }}</h3>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card bg-light p-3 shadow-sm">
+            <h6 class="text-muted">ตอบรับแล้ว</h6>
+            {% set total_confirmed = 
+                  (responses | selectattr('response_status', 'equalto', 'confirmed') | list | length) + 
+                  (responses | selectattr('response_status', 'equalto', 'sub_confirmed') | list | length) 
+            %}
+            <h3 class="text-success">{{ total_confirmed }}</h3>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card bg-light p-3 shadow-sm">
+            <h6 class="text-muted">สละสิทธิ์ (รอคนแทน)</h6>
+            {% set total_declined = 
+                  (responses | selectattr('response_status', 'equalto', 'declined_admin') | list | length) + 
+                  (responses | selectattr('response_status', 'equalto', 'sub_declined') | list | length) 
+            %}
+            <h3 class="text-danger">{{ total_declined }}</h3>
+          </div>
+        </div>
+        <div class="col-md-3">
+          <div class="card bg-light p-3 shadow-sm">
+            <h6 class="text-muted">ยังไม่ตอบ / รอยืนยัน</h6>
+            {% set total_pending = 
+                  (responses | selectattr('response_status', 'equalto', 'pending') | list | length) + 
+                  (responses | selectattr('response_status', 'equalto', 'delegated') | list | length) 
+            %}
+            <h3 class="text-warning">{{ total_pending }}</h3>
+          </div>
+        </div>
+      </div>
 
-                {% elif r.response_status == 'pending' and r.primary_user.line_user_id %}
-                  <button
-                    type="button"
-                    class="btn btn-outline-success btn-sm send-line-reminder-btn"
-                    data-user-id="{{ r.primary_user.line_user_id }}"
-                    data-user-name="{{ r.primary_user.full_name }}"
-                    data-ot-date="{{ r.schedule.ot_date.strftime('%d/%m/%Y') }}"
-                    data-survey-link="{{ url_for('show_survey', token=r.token, _external=True) }}"
-                  >
-                    <i class="bi bi-line"></i> เตือน LINE
-                  </button>
-                {% elif r.response_status == 'pending' %}
-                  <button type="button" class="btn btn-outline-secondary btn-sm" disabled>
-                    <i class="bi bi-line"></i> ไม่มี LINE
-                  </button>
-                {% else %} 
-                  - 
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    
-    {% elif not error_message %}
-      <div class="text-center p-5">
-        <h3 class="text-muted">ยังไม่มีข้อมูลตาราง OT</h3>
-        <p>กรุณาเลือกตาราง OT จากเมนูด้านบน หรือ <a href="{{ url_for('admin_create_page') }}">คลิกที่นี่เพื่อสร้างตารางใหม่</a></p>
-      </div>
-    {% endif %}
+            <div class="table-responsive">
+        <table class="table table-striped table-hover align-middle">
+          <thead class="table-light">
+            <tr>
+              <th scope="col">#</th>
+              <th scope="col">ชื่อ-สกุล (ผู้มีสิทธิ์หลัก)</th>
+              <th scope="col">สถานะ</th>
+              <th scope="col">ผู้รับแทน / หมายเหตุ</th>
+              <th scope="col">Action (สำหรับ Admin)</th> 
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in responses %}
+            <tr class="
+              {% if r.response_status == 'confirmed' or r.response_status == 'sub_confirmed' %}
+                table-success
+              {% elif r.response_status == 'declined_admin' or r.response_status == 'sub_declined' %}
+                table-danger
+              {% elif r.response_status == 'delegated' %}
+                table-warning
+              {% elif r.response_status == 'pending' %}
+                table-secondary
+              {% endif %}
+            ">
+              <td>{{ loop.index }}</td>
+              <td>
+                <i class="bi bi-person-circle"></i>
+                {{ r.primary_user.full_name }}
+              </td>
+              <td>
+                {% if r.response_status == 'confirmed' %}
+                  <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> ยืนยัน (สิทธิ์หลัก)</span>
+                {% elif r.response_status == 'sub_confirmed' %}
+                  <span class="badge bg-success"><i class="bi bi-person-check-fill"></i> ยืนยัน (ตัวแทน)</span>
+                {% elif r.response_status == 'delegated' %}
+                  <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split"></i> รอยืนยันตัวแทน</span>
+                {% elif r.response_status == 'declined_admin' %}
+                  <span class="badge bg-danger"><i class="bi bi-x-circle-fill"></i> สละสิทธิ์ (Admin เลือก)</span>
+                {% elif r.response_status == 'sub_declined' %}
+                  <span class="badge bg-danger"><i class="bi bi-person-x-fill"></i> สละสิทธิ์ (ตัวแทนปฏิเสธ)</span>
+                {% else %}                   <span class="badge bg-secondary"><i class="bi bi-question-circle"></i> รอตอบรับ</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if r.delegated_user %}
+                  <span class="text-info">
+                    <i class="bi bi-arrow-right-short"></i> มอบให้: {{ r.delegated_user.full_name }}
+                  </span>
+                {% elif r.let_admin_decide %}
+                  <span class="text-muted">
+                    <i class="bi bi-person-fill-gear"></i> ให้ Admin เลือกแทน
+                  </span>
+                {% elif r.response_status == 'confirmed' %}
+                  <span class="text-success">- (มาด้วยตนเอง) -</span>
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+              <td>
+                
+                                                {% if r.response_status == 'delegated' %}
+                  <form action="{{ url_for('confirm_substitute', response_id=r.id) }}" method="POST" class="d-inline-block mb-1">
+                    <button type="submit" class="btn btn-success btn-sm" data-bs-toggle="tooltip" title="ยืนยันว่า '{{ r.delegated_user.full_name }}' มาแน่">
+                      <i class="bi bi-check-lg"></i> ยืนยัน
+                    </button>
+                  </form>
+                  <form action="{{ url_for('reject_substitute', response_id=r.id) }}" method="POST" class="d-inline-block">
+                    <button type="submit" class="btn btn-danger btn-sm" data-bs-toggle="tooltip" title="'{{ r.delegated_user.full_name }}' ไม่มา (ให้ Admin หาคนใหม่)">
+                      <i class="bi bi-x-lg"></i> ปฏิเสธ
+                    </button>
+                  </form>
 
-  </div>
+                                {% elif r.response_status in ['declined_admin', 'sub_declined'] %}
+                  <form action="{{ url_for('assign_substitute', response_id=r.id) }}" method="POST" class="d-flex gap-1">
+                    <select name="user_id" class="form-select form-select-sm" required>
+                      <option value="">-- เลือกคนแทน --</option>
+                                            {% for user in available_substitutes %}
+                        <option value="{{ user.id }}">{{ user.full_name }}</option>
+                      {% endfor %}
+                    </select>
+                    <button type="submit" class="btn btn-primary btn-sm">
+                      <i class="bi bi-person-check-fill"></i> มอบหมาย
+                    </button>
+                  </form>
+                  {% if not available_substitutes %}
+                    <span class="text-danger small">(ไม่เหลือคนว่างให้เลือก)</span>
+                  {% endif %}
+
+                                {% elif r.response_status == 'pending' and r.primary_user.line_user_id %}
+                  <button
+                    type="button"
+                    class="btn btn-outline-success btn-sm send-line-reminder-btn"
+                    data-user-id="{{ r.primary_user.line_user_id }}"
+                    data-user-name="{{ r.primary_user.full_name }}"
+                    data-ot-date="{{ r.schedule.ot_date.strftime('%d/%m/%Y') }}"
+                    data-survey-link="{{ url_for('show_survey', token=r.token, _external=True) }}"
+                  >
+                    <i class="bi bi-line"></i> เตือน LINE
+                  </button>
+                
+                                {% else %} 
+                  - 
+                {% endif %}
+
+              </td>
+            </tr>
+            {% endfor %}
+  S         </tbody>
+        </table>
+      </div>
+    
+    {% elif not error_message %}
+      <div class="text-center p-5">
+        <h3 class="text-muted">ยังไม่มีข้อมูลตาราง OT</h3>
+        <p>กรุณาเลือกตาราง OT จากเมนูด้านบน หรือ <a href="{{ url_for('admin_create_page') }}">คลิกที่นี่เพื่อสร้างตารางใหม่</a></p>
+      </div>
+    {% endif %}
+
+  </div>
 </div>
 {% endblock %}
 
 
 {% block scripts %}
 <script>
-  document.addEventListener('DOMContentLoaded', function () {
-    // 1. เปิดใช้งาน Tooltips (สำหรับปุ่ม ยืนยัน/ปฏิเสธ)
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-      return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
+  document.addEventListener('DOMContentLoaded', function () {
+    // 1. เปิดใช้งาน Tooltips (สำหรับปุ่ม ยืนยัน/ปฏิเสธ)
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+      return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
 
-    // 2. เปิดใช้งานปุ่ม "เตือน LINE" (จากโค้ดเดิม)
-    document.querySelectorAll('.send-line-reminder-btn').forEach((button) => {
-      button.addEventListener('click', async function () {
-        const userId = this.dataset.userId;
-        const userName = this.dataset.userName;
-        const otDate = this.dataset.otDate;
-        const surveyLink = this.dataset.surveyLink;
+    // 2. เปิดใช้งานปุ่ม "เตือน LINE" (จากโค้ดเดิม)
+    document.querySelectorAll('.send-line-reminder-btn').forEach((button) => {
+      button.addEventListener('click', async function () {
+        const userId = this.dataset.userId;
+        const userName = this.dataset.userName;
+        const otDate = this.dataset.otDate;
+        const surveyLink = this.dataset.surveyLink;
 
-        if (!confirm(`คุณต้องการส่ง LINE เตือน คุณ ${userName} สำหรับ OT วันที่ ${otDate} ใช่หรือไม่?`)) {
-          return;
-        }
+        if (!confirm(`คุณต้องการส่ง LINE เตือน คุณ ${userName} สำหรับ OT วันที่ ${otDate} ใช่หรือไม่?`)) {
+          return;
+        }
 
-        try {
-          const response = await fetch('/api/send-line-reminder', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              line_user_id: userId,
-              full_name: userName,
-              ot_date: otDate,
-              survey_link: surveyLink,
-            }),
-          });
+        try {
+          const response = await fetch('/api/send-line-reminder', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              line_user_id: userId,
+              full_name: userName,
+              ot_date: otDate,
+              survey_link: surveyLink,
+            }),
+          });
 
-          const data = await response.json();
+          const data = await response.json();
 
-          if (response.ok) {
-            alert('ส่ง LINE เตือนสำเร็จ!');
-          } else {
-            alert(`ไม่สามารถส่ง LINE เตือนได้: ${data.error || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}`);
-          }
-        } catch (error) {
-          console.error('Error sending LINE reminder:', error);
-          alert('เกิดข้อผิดพลาดในการส่ง LINE เตือน');
-        }
-      });
-    });
-  });
+          if (response.ok) {
+            alert('ส่ง LINE เตือนสำเร็จ!');
+          } else {
+            alert(`ไม่สามารถส่ง LINE เตือนได้: ${data.error || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}`);
+          }
+        } catch (error) {
+          console.error('Error sending LINE reminder:', error);
+          alert('เกิดข้อผิดพลาดในการส่ง LINE เตือน');
+        }
+      });
+    });
+  });
 </script>
 {% endblock %}
