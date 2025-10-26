@@ -182,33 +182,33 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-#(สำคัญ!) Route ลับสำหรับ "สร้าง Admin คนแรก"
-@app.route('/admin/create-first-admin')
-def create_first_admin():
-    try:
-#@app.route('/admin/create-first-admin')
-#def create_first_admin():
-#    try:
-        admin_user = User.query.filter_by(username='admin').first()
-        if not admin_user:
-            admin_user = User(
-                username='admin', 
-                full_name='ผู้ดูแลระบบ', 
-                is_admin=True
-            )
-            admin_user.set_password('password123') 
-            db.session.add(admin_user)
-            db.session.commit()
-            return "<h1>สร้าง Admin User (username: admin, pass: password123) สำเร็จ!</h1>"
-        else:
-            admin_user.set_password('password123')
-            admin_user.is_admin = True
-            db.session.commit()
-            return "<h1>มี User 'admin' อยู่แล้ว -> อัปเดตสิทธิ์และรีเซ็ตรหัสผ่านเป็น 'password123' สำเร็จ!</h1>"
-    except Exception as e:
-        db.session.rollback()
-        return f"เกิดข้อผิดพลาด: {e}"
-# --- (สิ้นสุดส่วน Login) ---
+# #(สำคัญ!) Route ลับสำหรับ "สร้าง Admin คนแรก"
+# @app.route('/admin/create-first-admin')
+# def create_first_admin():
+#     try:
+# #@app.route('/admin/create-first-admin')
+# #def create_first_admin():
+# #    try:
+#         admin_user = User.query.filter_by(username='admin').first()
+#         if not admin_user:
+#             admin_user = User(
+#                 username='admin', 
+#                 full_name='ผู้ดูแลระบบ', 
+#                 is_admin=True
+#             )
+#             admin_user.set_password('password123') 
+#             db.session.add(admin_user)
+#             db.session.commit()
+#             return "<h1>สร้าง Admin User (username: admin, pass: password123) สำเร็จ!</h1>"
+#         else:
+#             admin_user.set_password('password123')
+#             admin_user.is_admin = True
+#             db.session.commit()
+#             return "<h1>มี User 'admin' อยู่แล้ว -> อัปเดตสิทธิ์และรีเซ็ตรหัสผ่านเป็น 'password123' สำเร็จ!</h1>"
+#     except Exception as e:
+#         db.session.rollback()
+#         return f"เกิดข้อผิดพลาด: {e}"
+# # --- (สิ้นสุดส่วน Login) ---
 
 
 # --- 3.2 ส่วนของ Survey (User ทั่วไป ไม่ต้อง Login) ---
