@@ -582,11 +582,81 @@ def admin_reports():
     pass # Placeholder - keep the original code
 
 # หน้า Dashboard หลัก
+# (วางทับฟังก์ชัน admin_dashboard เดิม)
+
 @app.route('/admin')
 @login_required
 def admin_dashboard():
-    # ... (โค้ดเหมือนเดิม) ...
-    pass # Placeholder - keep the original code
+    if not current_user.is_admin: abort(403)
+
+    all_schedules = OTSchedule.query.order_by(OTSchedule.ot_date.desc()).all()
+    schedule_id_to_show = request.args.get('schedule_id', type=int)
+    search_date_str = request.args.get('search_date')
+
+    selected_schedule = None
+    error_message = None
+    responses = []
+    available_substitutes = [] # (V3)
+
+    try:
+        if schedule_id_to_show:
+            selected_schedule = OTSchedule.query.get(schedule_id_to_show)
+
+        elif search_date_str:
+            search_date = datetime.strptime(search_date_str, '%Y-%m-%d').date()
+            selected_schedule = OTSchedule.query.filter_by(ot_date=search_date).first()
+            if not selected_schedule:
+                error_message = f"ไม่พบตาราง OT สำหรับวันที่ {search_date.strftime('%d/%m/%Y')}"
+
+        elif all_schedules:
+            selected_schedule = all_schedules[0]
+
+        # (V3) เพิ่ม Logic ค้นหาคนว่าง
+        if selected_schedule:
+            responses = selected_schedule.responses
+
+            all_primary_user_ids = [r.primary_user_id for r in responses]
+
+            all_delegated_user_ids = [
+                r.delegated_to_user_id for r in responses
+                if r.delegated_to_user_id is not None and
+                   r.response_status in ['delegated', 'sub_confirmed']
+            ]
+
+            excluded_user_ids = list(set(all_primary_user_ids + all_delegated_user_ids))
+
+            available_substitutes = User.query.filter(
+                User.id.notin_(excluded_user_ids),
+                User.is_admin == False
+            ).order_by(User.full_name).all()
+
+    except ValueError:
+        error_message = "รูปแบบวันที่ไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)"
+        flash(error_message, "danger") # ใช้ flash แทนการส่ง error_message ตรงๆ
+        # Clear search_date_str if invalid
+        search_date_str = None
+        selected_schedule = None # Reset selected schedule on error
+        responses = []
+        available_substitutes = []
+        # Optionally redirect or render with just all_schedules
+        # return redirect(url_for('admin_dashboard'))
+    except Exception as e:
+        error_message = f"เกิดข้อผิดพลาด: {str(e)}"
+        flash(error_message, "danger")
+        app.logger.error(f"Error in admin_dashboard: {e}") # Log the error
+        selected_schedule = None # Reset selected schedule on error
+        responses = []
+        available_substitutes = []
+
+
+    # (V3) อัปเกรดการส่งค่า - เอา error_message ออก เพราะใช้ flash แล้ว
+    return render_template('admin.html',
+                           all_schedules=all_schedules,
+                           selected_schedule=selected_schedule,
+                           responses=responses,
+                           available_substitutes=available_substitutes,
+                           search_date_str=search_date_str
+                           )
 
 # หน้า Setup Demo (ควรคอมเมนต์ออก)
 # @app.route('/setup-demo')
