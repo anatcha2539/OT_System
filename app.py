@@ -100,31 +100,6 @@ def callback():
         abort(400)
     return 'OK'
 
-@handler.add(MessageEvent, message=TextMessageContent)
-def handle_message(event):
-    user_id = event.source.user_id
-    text = event.message.text
-    
-    # (สำคัญ) พิมพ์ User ID ออกไปที่ Logs ของ Render
-    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-    print(f"!!! USER ID ที่คุณตามหาคือ: {user_id}")
-    print(f"!!! เขาพิมพ์ว่า: {text}")
-    print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-
-    # (Optional) พยายามตอบกลับไปหาเขา
-    try:
-        with ApiClient(Configuration(access_token=YOUR_CHANNEL_ACCESS_TOKEN)) as api_client:
-            line_bot_api_v3 = MessagingApi(api_client)
-            line_bot_api_v3.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[V3TextMessage(text=f'นี่คือ User ID ของคุณ:\n{user_id}\n\nกรุณาคัดลอก ID นี้ไปให้ Admin ครับ')]
-                )
-            )
-    except Exception as e:
-        print(f"!!! ไม่สามารถ 'ตอบกลับ' หา {user_id} ได้ (v3): {e}")
-
-
 # --- 2. สร้างโมเดลฐานข้อมูล ---
 
 # (ใหม่) อัปเกรด User Model ให้รองรับการ Login
@@ -207,33 +182,33 @@ def logout():
     logout_user()
     return redirect(url_for('login'))
 
-# (สำคัญ!) Route ลับสำหรับ "สร้าง Admin คนแรก"
-# @app.route('/admin/create-first-admin')
-# def create_first_admin():
-#     try:
-# #@app.route('/admin/create-first-admin')
-# #def create_first_admin():
-# #    try:
-#         admin_user = User.query.filter_by(username='admin').first()
-#         if not admin_user:
-#             admin_user = User(
-#                 username='admin', 
-#                 full_name='ผู้ดูแลระบบ', 
-#                 is_admin=True
-#             )
-#             admin_user.set_password('password123') 
-#             db.session.add(admin_user)
-#             db.session.commit()
-#             return "<h1>สร้าง Admin User (username: admin, pass: password123) สำเร็จ!</h1>"
-#         else:
-#             admin_user.set_password('password123')
-#             admin_user.is_admin = True
-#             db.session.commit()
-#             return "<h1>มี User 'admin' อยู่แล้ว -> อัปเดตสิทธิ์และรีเซ็ตรหัสผ่านเป็น 'password123' สำเร็จ!</h1>"
-#     except Exception as e:
-#         db.session.rollback()
-#         return f"เกิดข้อผิดพลาด: {e}"
-# # --- (สิ้นสุดส่วน Login) ---
+#(สำคัญ!) Route ลับสำหรับ "สร้าง Admin คนแรก"
+@app.route('/admin/create-first-admin')
+def create_first_admin():
+    try:
+#@app.route('/admin/create-first-admin')
+#def create_first_admin():
+#    try:
+        admin_user = User.query.filter_by(username='admin').first()
+        if not admin_user:
+            admin_user = User(
+                username='admin', 
+                full_name='ผู้ดูแลระบบ', 
+                is_admin=True
+            )
+            admin_user.set_password('password123') 
+            db.session.add(admin_user)
+            db.session.commit()
+            return "<h1>สร้าง Admin User (username: admin, pass: password123) สำเร็จ!</h1>"
+        else:
+            admin_user.set_password('password123')
+            admin_user.is_admin = True
+            db.session.commit()
+            return "<h1>มี User 'admin' อยู่แล้ว -> อัปเดตสิทธิ์และรีเซ็ตรหัสผ่านเป็น 'password123' สำเร็จ!</h1>"
+    except Exception as e:
+        db.session.rollback()
+        return f"เกิดข้อผิดพลาด: {e}"
+# --- (สิ้นสุดส่วน Login) ---
 
 
 # --- 3.2 ส่วนของ Survey (User ทั่วไป ไม่ต้อง Login) ---
