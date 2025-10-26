@@ -5,7 +5,7 @@ import uuid
 
 import calendar
 from flask import Flask, request, jsonify, render_template, url_for, redirect, abort, flash
-from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func, extract, and_
 from datetime import datetime, date
 
 # --- (ใหม่) 1. Import Library ของ Flask-Login และการเข้ารหัส ---
