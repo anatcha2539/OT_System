@@ -134,7 +134,7 @@ class OTResponse(db.Model):
     response_status = db.Column(db.String(50), default='pending') # pending, confirmed, declined_admin, delegated, sub_confirmed, sub_declined
     delegated_to_user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     let_admin_decide = db.Column(db.Boolean, default=False)
-    schedule = db.relationship('OTSchedule', backref=db.backref('responses', lazy=True))
+    schedule = db.relationship('OTSchedule', backref=db.backref('responses', lazy=True, cascade="all, delete-orphan")) # Add cascade
     primary_user = db.relationship('User', foreign_keys=[primary_user_id])
     delegated_user = db.relationship('User', foreign_keys=[delegated_to_user_id])
 
@@ -164,8 +164,7 @@ def login():
             return redirect(url_for('admin_dashboard'))
         else:
             flash("Username หรือ Password ไม่ถูกต้อง (หรือคุณไม่ใช่ Admin)", "danger")
-            # return render_template('login.html', error="Username หรือ Password ไม่ถูกต้อง (หรือคุณไม่ใช่ Admin)") # ไม่ต้องใช้ error แล้ว เพราะใช้ flash
-            return render_template('login.html') # ส่งแค่ template ไป flash จะแสดงผลเอง
+            return render_template('login.html')
 
     return render_template('login.html')
 
@@ -192,6 +191,7 @@ def logout():
 #             db.session.commit()
 #             return "<h1>สร้าง Admin User (username: admin, pass: password123) สำเร็จ!</h1>"
 #         else:
+#             # ถ้ามี user 'admin' อยู่แล้ว แค่อัปเดต password และ is_admin (ถ้าจำเป็น)
 #             admin_user.set_password('password123')
 #             admin_user.is_admin = True
 #             db.session.commit()
@@ -205,6 +205,9 @@ def logout():
 @app.route('/survey/<string:token>')
 def show_survey(token):
     response = OTResponse.query.filter_by(token=token).first_or_404()
+    # ป้องกันการเข้าถึง survey ที่ตอบไปแล้วโดยตรง (อาจจะเพิ่มเงื่อนไขอื่นๆ เช่น วันที่ผ่านไปแล้ว)
+    if response.response_status != 'pending':
+         return render_template('survey_closed.html', status=response.response_status) # สร้าง template ใหม่
     return render_template('survey.html',
                            response_id=response.id,
                            user_name=response.primary_user.full_name,
@@ -279,7 +282,11 @@ def submit_ot_response():
                 )
 
             elif data.get('delegated_to_id'):
-                delegated_id = data.get('delegated_to_id')
+                try:
+                    delegated_id = int(data.get('delegated_to_id')) # Ensure it's an integer
+                except (ValueError, TypeError):
+                    return jsonify({"error": "ID ผู้รับมอบสิทธิ์ไม่ถูกต้อง"}), 400
+
                 current_schedule_id = response.schedule_id
 
                 existing_delegation = OTResponse.query.filter(
@@ -293,12 +300,15 @@ def submit_ot_response():
                     sub_name = substitute_user.full_name if substitute_user else "คนนี้"
                     return jsonify({"error": f"เลือกตัวแทนซ้ำ! ({sub_name} ถูกเลือกไปแล้วโดยคนอื่น)"}), 400
 
+                # Check if the delegated user exists
+                substitute_user = User.query.get(delegated_id)
+                if not substitute_user:
+                     return jsonify({"error": f"ไม่พบข้อมูลผู้รับมอบสิทธิ์ (ID: {delegated_id})"}), 400
+
                 response.response_status = 'delegated'
                 response.delegated_to_user_id = delegated_id
                 response.let_admin_decide = False
-
-                substitute_user = User.query.get(delegated_id)
-                substitute_name = substitute_user.full_name if substitute_user else "(ไม่พบชื่อ)"
+                substitute_name = substitute_user.full_name
 
                 message_to_group = (
                     f"🚨 แจ้งเตือนสละสิทธิ์ OT ({ot_date_str}) 🚨\n"
@@ -343,7 +353,12 @@ def add_user():
         full_name = request.form['full_name']
         line_user_id = request.form.get('line_user_id', None)
 
+        if not username or not full_name:
+             flash("กรุณากรอก Username และ ชื่อ-สกุล", "warning")
+             return redirect(url_for('admin_users_page'))
+
         if line_user_id and line_user_id.strip() != "":
+            line_user_id = line_user_id.strip() # Remove leading/trailing whitespace
             existing_line_id = User.query.filter_by(line_user_id=line_user_id).first()
             if existing_line_id:
                 flash(f"เกิดข้อผิดพลาด: LINE User ID ({line_user_id}) นี้มีผู้ใช้งานแล้ว", "danger")
@@ -375,19 +390,18 @@ def add_user():
 def delete_user(user_id):
     if not current_user.is_admin: abort(403)
     try:
-        has_responses = OTResponse.query.filter(
-            (OTResponse.primary_user_id == user_id) |
-            (OTResponse.delegated_to_user_id == user_id)
-        ).first()
-
-        if has_responses:
-            flash("ไม่สามารถลบผู้ใช้นี้ได้: ผู้ใช้มีข้อมูลผูกพันอยู่ในตาราง OT ที่สร้างไปแล้ว", "danger")
-            return redirect(url_for('admin_users_page'))
-
         user = User.query.get_or_404(user_id)
 
         if user.is_admin:
             flash("ไม่สามารถลบผู้ดูแลระบบได้", "danger")
+            return redirect(url_for('admin_users_page'))
+
+        # Check dependencies more carefully
+        has_primary_responses = OTResponse.query.filter_by(primary_user_id=user_id).first()
+        has_delegated_responses = OTResponse.query.filter_by(delegated_to_user_id=user_id).first()
+
+        if has_primary_responses or has_delegated_responses:
+            flash("ไม่สามารถลบผู้ใช้นี้ได้: ผู้ใช้มีข้อมูลผูกพันอยู่ในตาราง OT ที่สร้างไปแล้ว (เป็นผู้มีสิทธิ์หลัก หรือ ผู้รับมอบสิทธิ์)", "danger")
             return redirect(url_for('admin_users_page'))
 
         db.session.delete(user)
@@ -410,11 +424,12 @@ def edit_user(user_id):
         user = User.query.get_or_404(user_id)
 
         if not new_full_name:
-            return jsonify({"error": "ไม่พบชื่อใหม่"}), 400
+            return jsonify({"error": "กรุณากรอก ชื่อ-สกุล"}), 400
 
-        user.full_name = new_full_name
+        user.full_name = new_full_name.strip() # Ensure no extra whitespace
 
         if new_line_user_id and new_line_user_id.strip() != "":
+            new_line_user_id = new_line_user_id.strip()
             existing_line_id = User.query.filter(
                 User.line_user_id == new_line_user_id,
                 User.id != user_id
@@ -426,10 +441,11 @@ def edit_user(user_id):
             user.line_user_id = None
 
         db.session.commit()
-        return jsonify({"message": "success"}), 200
+        return jsonify({"message": "success", "new_name": user.full_name, "new_line_id": user.line_user_id}), 200
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        app.logger.error(f"Error editing user {user_id}: {e}")
+        return jsonify({"error": f"เกิดข้อผิดพลาดในการแก้ไข: {str(e)}"}), 500
 
 @app.route('/admin/delete-schedule/<int:schedule_id>', methods=['POST'])
 @login_required
@@ -437,7 +453,8 @@ def delete_schedule(schedule_id):
     if not current_user.is_admin: abort(403)
     try:
         schedule = OTSchedule.query.get_or_404(schedule_id)
-        OTResponse.query.filter_by(schedule_id=schedule_id).delete()
+        # Cascade should handle deleting responses, but explicitly doing it might be safer
+        # OTResponse.query.filter_by(schedule_id=schedule_id).delete()
         db.session.delete(schedule)
         db.session.commit()
         flash(f"ลบตาราง OT วันที่ {schedule.ot_date.strftime('%d/%m/%Y')} สำเร็จ", "success")
@@ -460,13 +477,25 @@ def create_schedule():
     if not current_user.is_admin: abort(403)
     data = request.json
     ot_date_str = data.get('date')
-    primary_user_ids = data.get('user_ids', [])
+    primary_user_ids_str = data.get('user_ids', []) # Might receive strings
 
-    if not ot_date_str or not primary_user_ids:
+    if not ot_date_str or not primary_user_ids_str:
         return jsonify({"error": "กรุณาเลือกวันที่และพนักงานอย่างน้อย 1 คน"}), 400
 
     try:
+        # Convert user IDs to integers
+        primary_user_ids = [int(uid) for uid in primary_user_ids_str]
+    except ValueError:
+         return jsonify({"error": "ข้อมูล User ID ไม่ถูกต้อง"}), 400
+
+
+    try:
         ot_date = datetime.strptime(ot_date_str, '%Y-%m-%d').date()
+
+        # Check if date is in the past
+        if ot_date < date.today():
+             return jsonify({"error": "ไม่สามารถสร้างตาราง OT สำหรับวันที่ผ่านมาแล้ว"}), 400
+
         existing_schedule = OTSchedule.query.filter_by(ot_date=ot_date).first()
         if existing_schedule:
             return jsonify({"error": f"มีตาราง OT สำหรับวันที่ {ot_date_str} อยู่แล้ว"}), 400
@@ -475,8 +504,13 @@ def create_schedule():
         db.session.add(new_schedule)
         db.session.commit() # Commit schedule first to get its ID
 
-        created_responses = []
-        selected_users = User.query.filter(User.id.in_(primary_user_ids)).all()
+        # Verify selected users exist and are not admins
+        selected_users = User.query.filter(User.id.in_(primary_user_ids), User.is_admin == False).all()
+        if len(selected_users) != len(primary_user_ids):
+             db.session.rollback() # Rollback schedule creation if users are invalid
+             invalid_ids = set(primary_user_ids) - set(u.id for u in selected_users)
+             return jsonify({"error": f"ไม่พบข้อมูลพนักงานบางคน หรือเลือก Admin (IDs: {invalid_ids})"}), 400
+
         user_map = {u.id: u for u in selected_users}
 
         for user_id in primary_user_ids:
@@ -491,36 +525,45 @@ def create_schedule():
         names_list_for_group = []
         users_sent_count = 0
 
-        for resp in created_responses:
-            user = user_map.get(resp.primary_user_id)
-            if not user:
-                continue
+        # Use app context for url_for outside of request context (important for sending links)
+        with app.app_context():
+            for resp in created_responses:
+                user = user_map.get(resp.primary_user_id)
+                if not user:
+                    continue
 
-            names_list_for_group.append(f"- {user.full_name}")
-            survey_link = url_for('show_survey', token=resp.token, _external=True)
+                names_list_for_group.append(f"- {user.full_name}")
+                # Ensure _external=True for absolute URLs
+                survey_link = url_for('show_survey', token=resp.token, _external=True)
 
-            if user.line_user_id:
-                try:
-                    message_text = (
-                        f"สวัสดีครับ คุณ {user.full_name},\n\n"
-                        f"คุณได้รับสิทธิ์ OT สำหรับวันที่ {ot_date.strftime('%d/%m/%Y')}\n"
-                        f"กรุณากดยืนยัน/สละสิทธิ์ ภายในลิงก์นี้:\n\n"
-                        f"{survey_link}"
-                    )
-                    message = TextSendMessage(text=message_text)
-                    line_bot_api.push_message(user.line_user_id, messages=message)
-                    users_sent_count += 1
-                except Exception as e:
-                    print(f"!!! ส่ง LINE หา {user.full_name} ({user.line_user_id}) ไม่สำเร็จ: {e}")
+                if user.line_user_id:
+                    try:
+                        message_text = (
+                            f"สวัสดีครับ คุณ {user.full_name},\n\n"
+                            f"คุณได้รับสิทธิ์ OT สำหรับวันที่ {ot_date.strftime('%d/%m/%Y')}\n"
+                            f"กรุณากดยืนยัน/สละสิทธิ์ ภายในลิงก์นี้:\n\n"
+                            f"{survey_link}"
+                        )
+                        message = TextSendMessage(text=message_text)
+                        line_bot_api.push_message(user.line_user_id, messages=message)
+                        users_sent_count += 1
+                    except LineBotApiError as line_error:
+                         print(f"!!! ส่ง LINE หา {user.full_name} ({user.line_user_id}) ไม่สำเร็จ: {line_error.status_code} {line_error.error.message}")
+                         links_for_admin_fallback.append({
+                            "name": f"{user.full_name} (ส่ง LINE ไม่สำเร็จ: {line_error.error.message})",
+                            "link": survey_link
+                        })
+                    except Exception as e:
+                        print(f"!!! เกิดข้อผิดพลาดอื่นในการส่ง LINE หา {user.full_name}: {e}")
+                        links_for_admin_fallback.append({
+                            "name": f"{user.full_name} (ส่ง LINE ไม่สำเร็จ)",
+                            "link": survey_link
+                        })
+                else:
                     links_for_admin_fallback.append({
-                        "name": f"{user.full_name} (ส่ง LINE ไม่สำเร็จ)",
+                        "name": f"{user.full_name} (ไม่มี LINE ID)",
                         "link": survey_link
                     })
-            else:
-                links_for_admin_fallback.append({
-                    "name": f"{user.full_name} (ไม่มี LINE ID)",
-                    "link": survey_link
-                })
 
         names_list_str = "\n".join(names_list_for_group)
         message_to_group = (
@@ -533,14 +576,17 @@ def create_schedule():
             message_to_group += f"\n\n🚨 ({current_user.full_name} โปรดแจกจ่ายลิงก์ที่เหลือเอง)"
 
         send_line_push_message(message_to_group)
-        flash(f"สร้างตาราง OT วันที่ {ot_date_str} และส่งข้อความ LINE สำเร็จ!", "success")
+        # Use flash for success message on redirect, not needed for API response
+        # flash(f"สร้างตาราง OT วันที่ {ot_date_str} และส่งข้อความ LINE สำเร็จ!", "success")
 
         return jsonify({
-            "message": "สร้างตาราง OT สำเร็จ!",
+            "message": f"สร้างตาราง OT วันที่ {ot_date_str} สำเร็จ! ส่ง LINE ให้พนักงาน {users_sent_count} คน",
             "links": links_for_admin_fallback,
             "schedule_id": new_schedule.id
         }), 201
 
+    except ValueError:
+         return jsonify({"error": "รูปแบบวันที่ในข้อมูลไม่ถูกต้อง"}), 400
     except Exception as e:
         db.session.rollback()
         app.logger.error(f"Error creating schedule: {e}")
@@ -550,40 +596,312 @@ def create_schedule():
 @app.route('/api/send-line-reminder', methods=['POST'])
 @login_required
 def send_line_reminder():
-    # ... (โค้ดเหมือนเดิม) ...
-    pass # Placeholder - keep the original code
+    if not current_user.is_admin: abort(403)
+    data = request.json
+    line_user_id = data.get('line_user_id')
+    full_name = data.get('full_name')
+    ot_date = data.get('ot_date')
+    survey_link = data.get('survey_link')
+
+    if not all([line_user_id, full_name, ot_date, survey_link]):
+        return jsonify({"error": "ข้อมูลไม่ครบถ้วนสำหรับการส่ง Line"}), 400
+
+    try:
+        message_text = (
+            f"สวัสดีครับ คุณ {full_name},\n\n"
+            f"Admin แจ้งเตือนเรื่อง OT สำหรับวันที่ {ot_date} ที่คุณยังไม่ได้ตอบกลับครับ\n"
+            f"กรุณากดลิงก์นี้เพื่อยืนยัน/สละสิทธิ์:\n\n"
+            f"{survey_link}"
+        )
+        message = TextSendMessage(text=message_text)
+        line_bot_api.push_message(line_user_id, messages=message)
+        return jsonify({"message": "ส่ง LINE เตือนสำเร็จ!"}), 200
+    except LineBotApiError as e:
+        print(f"Error sending LINE reminder to {full_name} ({line_user_id}): {e.message}")
+        # Provide more specific error if possible
+        error_detail = e.error.message if hasattr(e, 'error') and hasattr(e.error, 'message') else str(e)
+        return jsonify({"error": f"ส่ง LINE ไม่สำเร็จ: {error_detail}"}), 500
+    except Exception as e:
+        print(f"Unexpected error sending LINE reminder: {e}")
+        app.logger.error(f"Unexpected error sending LINE reminder to {line_user_id}: {e}")
+        return jsonify({"error": f"เกิดข้อผิดพลาดที่ไม่คาดคิด: {str(e)}"}), 500
+
 
 # ฟังก์ชันยืนยันตัวแทน
 @app.route('/admin/substitute/confirm/<int:response_id>', methods=['POST'])
 @login_required
 def confirm_substitute(response_id):
-    # ... (โค้ดเหมือนเดิม) ...
-    pass # Placeholder - keep the original code
+    if not current_user.is_admin: abort(403)
+    response = OTResponse.query.get_or_404(response_id)
+    schedule_id_redirect = response.schedule_id # Get schedule ID before potential commit error
+
+    if not response.delegated_user or response.response_status not in ['delegated', 'sub_declined']:
+        flash("ไม่สามารถยืนยันตัวแทนได้ (สถานะไม่ถูกต้อง หรือ ไม่มีผู้รับมอบสิทธิ์)", "danger")
+        return redirect(url_for('admin_dashboard', schedule_id=schedule_id_redirect))
+
+    try:
+        response.response_status = 'sub_confirmed'
+        db.session.commit()
+
+        ot_date_str = response.schedule.ot_date.strftime('%d/%m/%Y')
+        message_to_group = (
+            f"✅ ยืนยันตัวแทน OT ({ot_date_str}) ✅\n"
+            f"ผู้สละสิทธิ์: คุณ {response.primary_user.full_name}\n"
+            f"ตัวแทน: คุณ {response.delegated_user.full_name} (ยืนยันมาแน่นอน)"
+        )
+        send_line_push_message(message_to_group)
+        flash("ยืนยันตัวแทนเรียบร้อยแล้ว", "success")
+
+    except Exception as e:
+         db.session.rollback()
+         flash(f"เกิดข้อผิดพลาดในการยืนยันตัวแทน: {e}", "danger")
+         app.logger.error(f"Error confirming substitute for response {response_id}: {e}")
+
+    return redirect(url_for('admin_dashboard', schedule_id=schedule_id_redirect))
+
 
 # ฟังก์ชันปฏิเสธตัวแทน
 @app.route('/admin/substitute/reject/<int:response_id>', methods=['POST'])
 @login_required
 def reject_substitute(response_id):
-    # ... (โค้ดเหมือนเดิม) ...
-    pass # Placeholder - keep the original code
+    if not current_user.is_admin: abort(403)
+    response = OTResponse.query.get_or_404(response_id)
+    schedule_id_redirect = response.schedule_id
+    original_delegated_user = response.delegated_user # Get user before potentially changing
+
+    if not original_delegated_user or response.response_status not in ['delegated', 'sub_confirmed']:
+        flash("ไม่สามารถปฏิเสธตัวแทนได้ (สถานะไม่ถูกต้อง หรือ ไม่มีผู้รับมอบสิทธิ์)", "danger")
+        return redirect(url_for('admin_dashboard', schedule_id=schedule_id_redirect))
+
+    try:
+        response.response_status = 'sub_declined'
+        response.let_admin_decide = True
+        # Keep delegated_to_user_id for record, or set to None if admin should reassign blank
+        # response.delegated_to_user_id = None # Optional: Clear assignment
+        db.session.commit()
+
+        ot_date_str = response.schedule.ot_date.strftime('%d/%m/%Y')
+        message_to_group = (
+            f"🚨 ตัวแทน OT ปฏิเสธ ({ot_date_str}) 🚨\n"
+            f"ผู้สละสิทธิ์: คุณ {response.primary_user.full_name}\n"
+            f"ตัวแทนที่ปฏิเสธ: คุณ {original_delegated_user.full_name} (ไม่สามารถมาได้)\n\n"
+            f"‼️ Admin: กรุณาหาคนใหม่แทน"
+        )
+        send_line_push_message(message_to_group)
+        flash("ปฏิเสธตัวแทนแล้ว (ระบบจะคืนสถานะให้ Admin เลือกคนใหม่)", "warning")
+
+    except Exception as e:
+         db.session.rollback()
+         flash(f"เกิดข้อผิดพลาดในการปฏิเสธตัวแทน: {e}", "danger")
+         app.logger.error(f"Error rejecting substitute for response {response_id}: {e}")
+
+    return redirect(url_for('admin_dashboard', schedule_id=schedule_id_redirect))
+
 
 # ฟังก์ชัน Admin เลือกตัวแทน
 @app.route('/admin/assign-substitute/<int:response_id>', methods=['POST'])
 @login_required
 def assign_substitute(response_id):
-    # ... (โค้ดเหมือนเดิม) ...
-    pass # Placeholder - keep the original code
+    if not current_user.is_admin: abort(403)
+    response = OTResponse.query.get_or_404(response_id)
+    schedule_id_redirect = response.schedule_id
+
+    if response.response_status not in ['declined_admin', 'sub_declined']:
+        flash("ไม่สามารถมอบหมายได้ (สถานะไม่ถูกต้อง)", "danger")
+        return redirect(url_for('admin_dashboard', schedule_id=schedule_id_redirect))
+
+    try:
+        # Check if user_id exists in the form data and is not empty
+        if 'user_id' not in request.form or not request.form['user_id']:
+             flash("กรุณาเลือกพนักงานที่จะมอบหมาย", "warning")
+             return redirect(url_for('admin_dashboard', schedule_id=schedule_id_redirect))
+
+        sub_user_id = int(request.form['user_id'])
+        sub_user = User.query.get(sub_user_id)
+
+        if not sub_user:
+             flash("ไม่พบพนักงานที่เลือก", "danger")
+             return redirect(url_for('admin_dashboard', schedule_id=schedule_id_redirect))
+
+        # Check if the selected user is already assigned or a primary user in this schedule
+        existing_primary = OTResponse.query.filter(
+            OTResponse.schedule_id == response.schedule_id,
+            OTResponse.primary_user_id == sub_user_id
+        ).first()
+
+        existing_assignment = OTResponse.query.filter(
+            OTResponse.schedule_id == response.schedule_id,
+            OTResponse.delegated_to_user_id == sub_user_id,
+            OTResponse.response_status.in_(['delegated', 'sub_confirmed']),
+            OTResponse.id != response_id # Exclude the current response itself if it was sub_declined
+        ).first()
+
+        if existing_primary or existing_assignment:
+            flash(f"เลือกตัวแทนซ้ำ! ({sub_user.full_name} มีส่วนร่วมใน OT นี้แล้ว)", "danger")
+            return redirect(url_for('admin_dashboard', schedule_id=schedule_id_redirect))
+
+        # --- อัปเดตสถานะ ---
+        response.delegated_to_user_id = sub_user_id
+        response.response_status = 'sub_confirmed' # ยืนยันเลย (เพราะ Admin เป็นคนเลือกเอง)
+        response.let_admin_decide = False
+        db.session.commit()
+
+        # --- แจ้งเตือน LINE ---
+        ot_date_str = response.schedule.ot_date.strftime('%d/%m/%Y')
+        message_to_group = (
+            f"✅ Admin มอบหมาย OT ({ot_date_str}) ✅\n"
+            f"จาก: คุณ {response.primary_user.full_name} (สละสิทธิ์)\n"
+            f"มอบหมายให้: คุณ {sub_user.full_name} (ยืนยันมาแน่นอน)\n"
+            f"(Admin: {current_user.full_name})"
+        )
+        send_line_push_message(message_to_group)
+        flash(f"มอบหมายให้ {sub_user.full_name} เรียบร้อยแล้ว", "success")
+
+    except ValueError:
+         flash("ข้อมูลที่ส่งมาไม่ถูกต้อง (User ID)", "danger")
+         return redirect(url_for('admin_dashboard', schedule_id=schedule_id_redirect))
+    except Exception as e:
+        db.session.rollback()
+        flash(f"เกิดข้อผิดพลาดในการมอบหมาย: {str(e)}", "danger")
+        app.logger.error(f"Error assigning substitute for response {response_id}: {e}")
+
+    return redirect(url_for('admin_dashboard', schedule_id=schedule_id_redirect))
+
 
 # หน้ารายงาน
 @app.route('/admin/reports')
 @login_required
 def admin_reports():
-    # ... (โค้ดเหมือนเดิม) ...
-    pass # Placeholder - keep the original code
+    if not current_user.is_admin: abort(403)
+
+    # --- 1. ตั้งค่าตัวกรอง (Filters) ---
+    today = date.today()
+    current_year = today.year
+    current_month = today.month
+    current_week = today.isocalendar()[1]
+
+    try:
+        selected_year = int(request.args.get('year', current_year))
+        selected_month = int(request.args.get('month', current_month))
+        selected_week = int(request.args.get('week', current_week))
+    except ValueError:
+        flash("ค่าตัวกรองไม่ถูกต้อง", "danger")
+        selected_year = current_year
+        selected_month = current_month
+        selected_week = current_week
+
+    # --- 2. Logic สรุปผลรายเดือน ---
+    monthly_summary = {}
+    sorted_monthly_summary = []
+    try:
+        monthly_responses = db.session.query(
+            OTResponse, OTSchedule,
+            User.full_name.label('primary_name'),
+            User_sub.full_name.label('sub_name')
+        ).join(
+            OTSchedule, OTResponse.schedule_id == OTSchedule.id
+        ).join(
+            User, OTResponse.primary_user_id == User.id
+        ).outerjoin(
+            User_sub, OTResponse.delegated_to_user_id == User_sub.id
+        ).filter(
+            extract('year', OTSchedule.ot_date) == selected_year,
+            extract('month', OTSchedule.ot_date) == selected_month,
+            OTResponse.response_status.in_(['confirmed', 'sub_confirmed'])
+        ).order_by(OTSchedule.ot_date.asc()).all()
+
+        for resp, schedule, primary_name, sub_name in monthly_responses:
+            user_name = None # Use None initially
+
+            if resp.response_status == 'confirmed':
+                user_name = primary_name
+            elif resp.response_status == 'sub_confirmed':
+                user_name = sub_name if sub_name else f"User ID: {resp.delegated_to_user_id or 'Unknown'}" # Handle missing sub_name
+
+            if user_name:
+                if user_name not in monthly_summary:
+                    monthly_summary[user_name] = {'name': user_name, 'dates': []}
+                monthly_summary[user_name]['dates'].append(schedule.ot_date)
+
+        sorted_monthly_summary = sorted(monthly_summary.values(), key=lambda item: len(item['dates']), reverse=True)
+    except Exception as e:
+        flash(f"เกิดข้อผิดพลาดในการดึงข้อมูลรายเดือน: {e}", "danger")
+        print(f"Error fetching monthly report: {e}") # Log the error
+
+
+    # --- 3. Logic สรุปผลรายสัปดาห์ ---
+    weekly_summary = {}
+    sorted_weekly_summary = []
+    week_range_str = f"(สัปดาห์ที่ {selected_week})" # Default week string
+    try:
+        # PostgreSQL uses 'week', SQLite might need adjustments or different approach
+        week_filter_column = extract('week', OTSchedule.ot_date)
+        # For ISO week standard used by isocalendar(), PostgreSQL also supports 'isoyear'
+        year_filter_column = extract('isoyear', OTSchedule.ot_date)
+
+        weekly_responses = db.session.query(
+            OTResponse, OTSchedule,
+            User.full_name.label('primary_name'),
+            User_sub.full_name.label('sub_name')
+        ).join(
+            OTSchedule, OTResponse.schedule_id == OTSchedule.id
+        ).join(
+            User, OTResponse.primary_user_id == User.id
+        ).outerjoin(
+            User_sub, OTResponse.delegated_to_user_id == User_sub.id
+        ).filter(
+            year_filter_column == selected_year, # Use ISO year
+            week_filter_column == selected_week,
+            OTResponse.response_status.in_(['confirmed', 'sub_confirmed'])
+        ).order_by(OTSchedule.ot_date.asc()).all()
+
+        for resp, schedule, primary_name, sub_name in weekly_responses:
+            user_name = None
+            if resp.response_status == 'confirmed':
+                user_name = primary_name
+            elif resp.response_status == 'sub_confirmed':
+                 user_name = sub_name if sub_name else f"User ID: {resp.delegated_to_user_id or 'Unknown'}"
+
+            if user_name:
+                if user_name not in weekly_summary:
+                    weekly_summary[user_name] = {'name': user_name, 'dates': []}
+                weekly_summary[user_name]['dates'].append(schedule.ot_date)
+
+        sorted_weekly_summary = sorted(weekly_summary.values(), key=lambda item: len(item['dates']), reverse=True)
+
+        # Calculate week range string (moved inside try) - using ISO standard week definition
+        # Monday is 1, Sunday is 7
+        week_start = datetime.strptime(f'{selected_year}-W{selected_week}-1', "%G-W%V-%u").date()
+        week_end = datetime.strptime(f'{selected_year}-W{selected_week}-7', "%G-W%V-%u").date()
+        week_range_str = f"{week_start.strftime('%d/%m')} - {week_end.strftime('%d/%m/%Y')}"
+
+    except ValueError:
+         flash(f"ไม่สามารถคำนวณช่วงวันที่สำหรับสัปดาห์ที่ {selected_week} ปี {selected_year}", "warning")
+    except Exception as e:
+        flash(f"เกิดข้อผิดพลาดในการดึงข้อมูลรายสัปดาห์: {e}", "danger")
+        print(f"Error fetching weekly report: {e}") # Log the error
+
+    # --- 4. ส่งข้อมูลไปที่ Template ---
+    first_schedule = OTSchedule.query.order_by(OTSchedule.ot_date.asc()).first()
+    start_year = first_schedule.ot_date.year if first_schedule else current_year
+    available_years = list(range(start_year, current_year + 2))
+
+    month_names = [(i, calendar.month_name[i]) for i in range(1, 13)]
+
+    return render_template('reports.html',
+                           selected_year=selected_year,
+                           selected_month=selected_month,
+                           selected_week=selected_week,
+                           available_years=available_years,
+                           month_names=month_names,
+                           current_month_name=calendar.month_name[selected_month],
+                           week_range_str=week_range_str,
+                           sorted_monthly_summary=sorted_monthly_summary,
+                           sorted_weekly_summary=sorted_weekly_summary
+                          )
+
 
 # หน้า Dashboard หลัก
-# (วางทับฟังก์ชัน admin_dashboard เดิม)
-
 @app.route('/admin')
 @login_required
 def admin_dashboard():
@@ -594,19 +912,23 @@ def admin_dashboard():
     search_date_str = request.args.get('search_date')
 
     selected_schedule = None
-    error_message = None
+    # error_message = None # Replaced by flash messages
     responses = []
     available_substitutes = [] # (V3)
 
     try:
         if schedule_id_to_show:
             selected_schedule = OTSchedule.query.get(schedule_id_to_show)
+            # If ID is provided, clear search date string
+            search_date_str = None
 
         elif search_date_str:
             search_date = datetime.strptime(search_date_str, '%Y-%m-%d').date()
             selected_schedule = OTSchedule.query.filter_by(ot_date=search_date).first()
             if not selected_schedule:
-                error_message = f"ไม่พบตาราง OT สำหรับวันที่ {search_date.strftime('%d/%m/%Y')}"
+                flash(f"ไม่พบตาราง OT สำหรับวันที่ {search_date.strftime('%d/%m/%Y')}", "info") # Use info, not error
+                # If search yields nothing, maybe default to latest? Or show empty.
+                # selected_schedule = all_schedules[0] if all_schedules else None
 
         elif all_schedules:
             selected_schedule = all_schedules[0]
@@ -631,25 +953,19 @@ def admin_dashboard():
             ).order_by(User.full_name).all()
 
     except ValueError:
-        error_message = "รูปแบบวันที่ไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)"
-        flash(error_message, "danger") # ใช้ flash แทนการส่ง error_message ตรงๆ
-        # Clear search_date_str if invalid
+        flash("รูปแบบวันที่ไม่ถูกต้อง (ต้องเป็น YYYY-MM-DD)", "danger")
         search_date_str = None
-        selected_schedule = None # Reset selected schedule on error
+        selected_schedule = None
         responses = []
         available_substitutes = []
-        # Optionally redirect or render with just all_schedules
-        # return redirect(url_for('admin_dashboard'))
     except Exception as e:
-        error_message = f"เกิดข้อผิดพลาด: {str(e)}"
-        flash(error_message, "danger")
-        app.logger.error(f"Error in admin_dashboard: {e}") # Log the error
-        selected_schedule = None # Reset selected schedule on error
+        flash(f"เกิดข้อผิดพลาด: {str(e)}", "danger")
+        app.logger.error(f"Error in admin_dashboard: {e}")
+        selected_schedule = None
         responses = []
         available_substitutes = []
 
-
-    # (V3) อัปเกรดการส่งค่า - เอา error_message ออก เพราะใช้ flash แล้ว
+    # (V3) อัปเกรดการส่งค่า
     return render_template('admin.html',
                            all_schedules=all_schedules,
                            selected_schedule=selected_schedule,
@@ -658,20 +974,104 @@ def admin_dashboard():
                            search_date_str=search_date_str
                            )
 
+
 # หน้า Setup Demo (ควรคอมเมนต์ออก)
 # @app.route('/setup-demo')
 # @login_required
 # def setup_demo():
-    # ... (โค้ดเหมือนเดิม) ...
-#    pass # Placeholder - keep the original code
+#     if not current_user.is_admin: abort(403)
+#     try:
+#         db.session.query(OTResponse).delete()
+#         db.session.query(OTSchedule).delete()
+#         User.query.filter(User.is_admin == False).delete()
+#         db.session.commit()
+#
+#         user_a = User(username='a', full_name='นายประทวน มงคลศิลป์')
+#         user_b = User(username='b', full_name='นายสุธี แซ่อึ้ง')
+#         user_c = User(username='c', full_name='นายพลวัต รัตนภักดี')
+#         user_d = User(username='d', full_name='นายนิติธร สุขหิรัญ')
+#         user_e = User(username='e', full_name='นายอนุพงษ์ อิงสันเทียะ')
+#         db.session.add_all([user_a, user_b, user_c, user_d, user_e])
+#         db.session.commit()
+#
+#         flash("สร้างข้อมูล Demo สำเร็จ (ลบข้อมูลเก่าและสร้างพนักงาน 5 คน)", "success")
+#         return redirect(url_for('admin_users_page')) # Redirect to user page after setup
+#         # return f"""
+#         # <h1>สร้างข้อมูลพนักงาน 5 คนสำเร็จ!</h1>
+#         # <p>ลบข้อมูลตาราง OT และพนักงานเก่าทั้งหมด (ยกเว้น Admin) และสร้างรายชื่อพนักงาน 5 คนเรียบร้อยแล้ว</p>
+#         # <hr>
+#         # <p><b>ขั้นตอนต่อไป:</b> <a href='/admin/create'>ไปที่หน้าสร้างตาราง OT</a></p>
+#         # <p><b>หรือไปที่หน้า Dashboard หลัก:</b> <a href='/admin'>/admin</a></p>
+#         # """
+#     except Exception as e:
+#         db.session.rollback()
+#         flash(f"เกิดข้อผิดพลาดในการ Setup Demo: {e}", "danger")
+#         return redirect(url_for('admin_dashboard'))
+
 
 # Handler สำหรับรับข้อความ LINE
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    # ... (โค้ดเหมือนเดิม) ...
-    pass # Placeholder - keep the original code
+    user_id = event.source.user_id
+    text = event.message.text
+    reply_text = ""
+
+    # --- 1. ตรวจสอบ Logic ---
+    if text == "ดูตาราง OT ที่ยังไม่ตอบ":
+        user = User.query.filter_by(line_user_id=user_id).first()
+
+        if not user:
+            reply_text = "ไม่พบข้อมูลของคุณในระบบ กรุณาติดต่อ Admin เพื่อลงทะเบียน LINE User ID ครับ"
+        else:
+            pending_responses = db.session.query(OTResponse).join(OTSchedule).filter(
+                OTResponse.primary_user_id == user.id,
+                OTResponse.response_status == 'pending',
+                OTSchedule.ot_date >= date.today() # Only future/today's OT
+            ).order_by(OTSchedule.ot_date.asc()).all()
+
+            if not pending_responses:
+                reply_text = f"สวัสดีครับ คุณ {user.full_name}\n\nคุณไม่มียอด OT ค้างตอบครับ 👍"
+            else:
+                reply_text = f"สวัสดีครับ คุณ {user.full_name}\n\nคุณมี OT ที่ยังไม่ตอบ {len(pending_responses)} รายการ:\n\n"
+
+                with app.app_context():
+                    for resp in pending_responses:
+                        survey_link = url_for('show_survey', token=resp.token, _external=True)
+                        reply_text += (
+                            f"📅 วันที่: {resp.schedule.ot_date.strftime('%d/%m/%Y')}\n"
+                            f"🔗 ลิงก์: {survey_link}\n\n"
+                        )
+                reply_text = reply_text.strip() # Remove last newline
+
+    else:
+        # --- Logic เดิม: (ถ้าไม่ใช่คำสั่ง Rich Menu) ---
+        print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print(f"!!! USER ID ที่คุณตามหาคือ: {user_id}")
+        print(f"!!! เขาพิมพ์ว่า: {text}")
+        print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
+        reply_text = f'นี่คือ User ID ของคุณ:\n{user_id}\n\nกรุณาคัดลอก ID นี้ไปให้ Admin ครับ'
+
+    # --- 2. ส่งการตอบกลับ ---
+    try:
+        # Use V3 API for replying
+        configuration = Configuration(access_token=YOUR_CHANNEL_ACCESS_TOKEN)
+        with ApiClient(configuration) as api_client:
+            line_bot_api_v3 = MessagingApi(api_client)
+            line_bot_api_v3.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[V3TextMessage(text=reply_text)]
+                )
+            )
+    except Exception as e:
+        print(f"!!! ไม่สามารถ 'ตอบกลับ' หา {user_id} ได้ (v3): {e}")
+
 
 # --- 4. ส่วนสำหรับรัน Server ---
 if __name__ == '__main__':
-    # Important: Set debug=False for production
-    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    # Important: Set debug=False for production deployment on Render
+    # The PORT environment variable is automatically set by Render.
+    port = int(os.environ.get('PORT', 5000))
+    # Use host='0.0.0.0' to be accessible externally
+    app.run(debug=False, host='0.0.0.0', port=port)
