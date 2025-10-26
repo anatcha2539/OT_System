@@ -1,5 +1,6 @@
 import os
 import uuid
+import flash
 # FIX 2.1: เพิ่ม redirect, abort ไว้ที่ import หลัก
 from flask import Flask, request, jsonify, render_template, url_for, redirect, abort
 from flask_sqlalchemy import SQLAlchemy
@@ -8,7 +9,7 @@ from datetime import datetime, date
 # --- (ใหม่) 1. Import Library ของ Flask-Login และการเข้ารหัส ---
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
-
+from flask import Flask, flash
 # --- 1. Import Library ของ LINE Bot SDK ---
 # (ใช้ v3 สำหรับ Webhook)
 from linebot.v3.webhook import WebhookHandler
@@ -270,11 +271,12 @@ def submit_ot_response():
             response.delegated_to_user_id = None
             response.let_admin_decide = False
         
+# ... ในฟังก์ชัน submit_ot_response ...
         elif status == 'declined':
-            response.response_status = 'declined'
-            message_to_group = "" 
-            
+# response.response_status = 'declined' # (ลบบรรทัดนี้)
+            message_to_group = ""  
             if data.get('let_admin_decide'):
+                response.response_status = 'declined_admin' # (อัปเดตสถานะ)
                 response.let_admin_decide = True
                 response.delegated_to_user_id = None
                 message_to_group = (
@@ -282,31 +284,62 @@ def submit_ot_response():
                     f"พนักงาน: คุณ {primary_user_name}\n"
                     f"สถานะ: ❌ สละสิทธิ์ (ให้ Admin เลือกแทน)"
                 )
-                
+
             elif data.get('delegated_to_id'):
                 delegated_id = data.get('delegated_to_id')
-                current_schedule_id = response.schedule_id
-                existing_delegation = OTResponse.query.filter(
-                    OTResponse.schedule_id == current_schedule_id,
-                    OTResponse.delegated_to_user_id == delegated_id
-                ).first() 
+# ... (โค้ดเช็ก existing_delegation เหมือนเดิม) ...
+# ...
 
-                if existing_delegation:
-                    substitute_user = User.query.get(delegated_id)
-                    sub_name = substitute_user.full_name if substitute_user else "คนนี้"
-                    return jsonify({"error": f"เลือกตัวแทนซ้ำ! ({sub_name} ถูกเลือกไปแล้วโดยคนอื่น)"}), 400
-
+                response.response_status = 'delegated' # (อัปเดตสถานะ)
                 response.delegated_to_user_id = delegated_id
                 response.let_admin_decide = False
-                
                 substitute_user = User.query.get(delegated_id)
                 substitute_name = substitute_user.full_name if substitute_user else "(ไม่พบชื่อ)"
-                
+
                 message_to_group = (
                     f"🚨 แจ้งเตือนสละสิทธิ์ OT ({ot_date_str}) 🚨\n"
                     f"พนักงาน: คุณ {primary_user_name}\n"
-                    f"สถานะ: ❌ สละสิทธิ์ (มอบสิทธิ์ให้ ➡️ {substitute_name})"
-                )
+                    f"สถานะ: ❌ สละสิทธิ์ (มอบสิทธิ์ให้ ➡️ {substitute_name})\n\n"
+                    f"‼️ Admin: กรุณาติดต่อ {substitute_name} เพื่อยืนยันและกดปุ่มใน Dashboard"
+                    )
+# ... (โค้ดส่วนที่เหลือเหมือนเดิม) ...
+        # elif status == 'declined':
+            # response.response_status = 'declined'
+            # message_to_group = "" 
+            
+            # if data.get('let_admin_decide'):
+            #     response.let_admin_decide = True
+            #     response.delegated_to_user_id = None
+            #     message_to_group = (
+            #         f"🚨 แจ้งเตือนสละสิทธิ์ OT ({ot_date_str}) 🚨\n"
+            #         f"พนักงาน: คุณ {primary_user_name}\n"
+            #         f"สถานะ: ❌ สละสิทธิ์ (ให้ Admin เลือกแทน)"
+            #     )
+                
+            # elif data.get('delegated_to_id'):
+            #     delegated_id = data.get('delegated_to_id')
+            #     current_schedule_id = response.schedule_id
+            #     existing_delegation = OTResponse.query.filter(
+            #         OTResponse.schedule_id == current_schedule_id,
+            #         OTResponse.delegated_to_user_id == delegated_id
+            #     ).first() 
+
+            #     if existing_delegation:
+            #         substitute_user = User.query.get(delegated_id)
+            #         sub_name = substitute_user.full_name if substitute_user else "คนนี้"
+            #         return jsonify({"error": f"เลือกตัวแทนซ้ำ! ({sub_name} ถูกเลือกไปแล้วโดยคนอื่น)"}), 400
+
+            #     response.delegated_to_user_id = delegated_id
+            #     response.let_admin_decide = False
+                
+            #     substitute_user = User.query.get(delegated_id)
+            #     substitute_name = substitute_user.full_name if substitute_user else "(ไม่พบชื่อ)"
+                
+            #     message_to_group = (
+            #         f"🚨 แจ้งเตือนสละสิทธิ์ OT ({ot_date_str}) 🚨\n"
+            #         f"พนักงาน: คุณ {primary_user_name}\n"
+            #         f"สถานะ: ❌ สละสิทธิ์ (มอบสิทธิ์ให้ ➡️ {substitute_name})"
+            #     )
             
             if message_to_group:
                 send_line_push_message(message_to_group)
@@ -552,6 +585,64 @@ def create_schedule():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+    
+
+# (ต้อง import flash ไว้ข้างบนด้วย)
+# from flask import Flask, ..., flash
+
+@app.route('/admin/substitute/confirm/<int:response_id>', methods=['POST'])
+@login_required
+def confirm_substitute(response_id):
+    if not current_user.is_admin: abort(403)
+    response = OTResponse.query.get_or_404(response_id)
+    
+    # ถ้าไม่มีตัวแทน หรือสถานะไม่ถูกต้อง
+    if not response.delegated_user or response.response_status not in ['delegated', 'sub_declined']:
+        flash("ไม่สามารถยืนยันตัวแทนได้ (สถานะไม่ถูกต้อง)", "danger")
+        return redirect(url_for('admin_dashboard', schedule_id=response.schedule_id))
+        
+    response.response_status = 'sub_confirmed'
+    db.session.commit()
+
+    # แจ้งเตือนกลุ่มว่า "ยืนยัน" แล้ว
+    ot_date_str = response.schedule.ot_date.strftime('%d/%m/%Y')
+    message_to_group = (
+        f"✅ ยืนยันตัวแทน OT ({ot_date_str}) ✅\n"
+        f"ผู้สละสิทธิ์: คุณ {response.primary_user.full_name}\n"
+        f"ตัวแทน: คุณ {response.delegated_user.full_name} (ยืนยันมาแน่นอน)"
+    )
+    send_line_push_message(message_to_group)
+    flash("ยืนยันตัวแทนเรียบร้อยแล้ว", "success")
+    
+    return redirect(url_for('admin_dashboard', schedule_id=response.schedule_id))
+
+
+@app.route('/admin/substitute/reject/<int:response_id>', methods=['POST'])
+@login_required
+def reject_substitute(response_id):
+    if not current_user.is_admin: abort(403)
+    response = OTResponse.query.get_or_404(response_id)
+
+    if not response.delegated_user or response.response_status not in ['delegated', 'sub_confirmed']:
+        flash("ไม่สามารถปฏิเสธตัวแทนได้ (สถานะไม่ถูกต้อง)", "danger")
+        return redirect(url_for('admin_dashboard', schedule_id=response.schedule_id))
+
+    response.response_status = 'sub_declined'
+    response.let_admin_decide = True # (สำคัญ) คืนสิทธิ์การตัดสินใจให้ Admin
+    db.session.commit()
+
+    # แจ้งเตือนกลุ่มว่า "ตัวแทนไม่มา"
+    ot_date_str = response.schedule.ot_date.strftime('%d/%m/%Y')
+    message_to_group = (
+        f"🚨 ตัวแทน OT ปฏิเสธ ({ot_date_str}) 🚨\n"
+        f"ผู้สละสิทธิ์: คุณ {response.primary_user.full_name}\n"
+        f"ตัวแทน: คุณ {response.delegated_user.full_name} (ไม่สามารถมาได้)\n\n"
+        f"‼️ Admin: กรุณาหาคนใหม่แทน"
+    )
+    send_line_push_message(message_to_group)
+    flash("ปฏิเสธตัวแทนแล้ว (ระบบจะคืนสถานะให้ Admin เลือกคนใหม่)", "warning")
+    
+    return redirect(url_for('admin_dashboard', schedule_id=response.schedule_id))
 
 @app.route('/admin')
 @login_required
