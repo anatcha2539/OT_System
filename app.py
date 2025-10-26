@@ -1,8 +1,8 @@
 import os
 import uuid
-import flash
 # FIX 2.1: เพิ่ม redirect, abort ไว้ที่ import หลัก
-from flask import Flask, request, jsonify, render_template, url_for, redirect, abort
+# นี่คือโค้ดที่ถูกต้อง
+from flask import Flask, request, jsonify, render_template, url_for, redirect, abort, flash
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, date
 
