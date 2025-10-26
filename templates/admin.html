@@ -42,7 +42,7 @@
       <div class="col-md-6">
         <label for="search_date" class="form-label fw-bold">หรือ ค้นหาด้วยวันที่</label>
         <form method="GET" action="{{ url_for('admin_dashboard') }}" class="input-group">
-                    <input type="date" class="form-control" id="search_date" name="search_date" value="{{ search_date_str | default('', true) }}">
+          <input type="date" class="form-control" id="search_date" name="search_date" value="{{ search_date_str | default('', true) }}">
           <button class="btn btn-outline-primary" type="submit">
             <i class="bi bi-search"></i> ค้นหา
           </button>
@@ -64,6 +64,18 @@
           </button>
         </form>
       </div>
+
+      <div class="my-3 text-end">
+        <a href="{{ url_for('admin_reports') }}" class="btn btn-success me-2">
+          <i class="bi bi-file-earmark-bar-graph"></i> ดูรายงานสรุป (รายเดือน/สัปดาห์)
+        </a>
+        <a href="{{ url_for('admin_create_page') }}" class="btn btn-warning me-2">
+          <i class="bi bi-plus-circle"></i> สร้างตาราง OT ใหม่
+        </a>
+        <a href="{{ url_for('admin_users_page') }}" class="btn btn-info">
+          <i class="bi bi-people"></i> จัดการพนักงาน
+        </a>
+      </div>
 
             <div class="row text-center mb-4">
         <div class="col-md-3">
@@ -163,8 +175,7 @@
                 {% endif %}
               </td>
               <td>
-                
-                                                {% if r.response_status == 'delegated' %}
+                                {% if r.response_status == 'delegated' %}
                   <form action="{{ url_for('confirm_substitute', response_id=r.id) }}" method="POST" class="d-inline-block mb-1">
                     <button type="submit" class="btn btn-success btn-sm" data-bs-toggle="tooltip" title="ยืนยันว่า '{{ r.delegated_user.full_name }}' มาแน่">
                       <i class="bi bi-check-lg"></i> ยืนยัน
@@ -180,7 +191,7 @@
                   <form action="{{ url_for('assign_substitute', response_id=r.id) }}" method="POST" class="d-flex gap-1">
                     <select name="user_id" class="form-select form-select-sm" required>
                       <option value="">-- เลือกคนแทน --</option>
-                                            {% for user in available_substitutes %}
+                      {% for user in available_substitutes %}
                         <option value="{{ user.id }}">{{ user.full_name }}</option>
                       {% endfor %}
                     </select>
@@ -206,12 +217,12 @@
                 
                                 {% else %} 
                   - 
-                {% endif %}
+          D       {% endif %}
 
               </td>
             </tr>
             {% endfor %}
-  S         </tbody>
+          </tbody>
         </table>
       </div>
     
@@ -231,7 +242,7 @@
 <script>
   document.addEventListener('DOMContentLoaded', function () {
     // 1. เปิดใช้งาน Tooltips (สำหรับปุ่ม ยืนยัน/ปฏิเสธ)
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
       return new bootstrap.Tooltip(tooltipTriggerEl);
     });
@@ -267,7 +278,7 @@
           if (response.ok) {
             alert('ส่ง LINE เตือนสำเร็จ!');
           } else {
-            alert(`ไม่สามารถส่ง LINE เตือนได้: ${data.error || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}`);
+             alert(`ไม่สามารถส่ง LINE เตือนได้: ${data.error || 'เกิดข้อผิดพลาดไม่ทราบสาเหตุ'}`);
           }
         } catch (error) {
           console.error('Error sending LINE reminder:', error);

@@ -2,6 +2,8 @@ import os
 import uuid
 # FIX 2.1: เพิ่ม redirect, abort ไว้ที่ import หลัก
 # นี่คือโค้ดที่ถูกต้อง
+
+import calendar
 from flask import Flask, request, jsonify, render_template, url_for, redirect, abort, flash
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, date
@@ -127,6 +129,7 @@ class User(db.Model, UserMixin): # (1. เพิ่ม UserMixin)
 
     def __repr__(self):
         return f'<User {self.full_name}>'
+    User_sub = db.aliased(User, name='user_sub')
 
 # (Class OTSchedule และ OTResponse เหมือนเดิม ไม่ต้องแก้)
 class OTSchedule(db.Model):
@@ -700,7 +703,130 @@ def assign_substitute(response_id):
 
     return redirect(url_for('admin_dashboard', schedule_id=response.schedule_id))
 
-# (วางทับโค้ดเดิมที่บรรทัด 627)
+@app.route('/admin/reports')
+@login_required
+def admin_reports():
+    if not current_user.is_admin: abort(403)
+
+    # --- 1. ตั้งค่าตัวกรอง (Filters) ---
+    today = date.today()
+    current_year = today.year
+    current_month = today.month
+    current_week = today.isocalendar()[1] # [1] คือ week number
+
+    try:
+        selected_year = int(request.args.get('year', current_year))
+        selected_month = int(request.args.get('month', current_month))
+        selected_week = int(request.args.get('week', current_week))
+    except ValueError:
+        flash("ค่าตัวกรองไม่ถูกต้อง", "danger")
+        selected_year = current_year
+        selected_month = current_month
+        selected_week = current_week
+
+    # --- 2. Logic สรุปผลรายเดือน ---
+    # เราจะค้นหา OT ทั้งหมดที่ "ยืนยัน" (confirmed) หรือ "ตัวแทนยืนยัน" (sub_confirmed)
+    monthly_responses = db.session.query(
+        OTResponse, OTSchedule, 
+        User.full_name.label('primary_name'),
+        User_sub.full_name.label('sub_name')
+    ).join(
+        OTSchedule, OTResponse.schedule_id == OTSchedule.id
+    ).join(
+        User, OTResponse.primary_user_id == User.id
+    ).outerjoin( # ใช้ outerjoin เพราะตัวแทนอาจจะยังไม่มี (เป็น None)
+        User_sub, OTResponse.delegated_to_user_id == User_sub.id
+    ).filter(
+        extract('year', OTSchedule.ot_date) == selected_year,
+        extract('month', OTSchedule.ot_date) == selected_month,
+        OTResponse.response_status.in_(['confirmed', 'sub_confirmed'])
+    ).order_by(OTSchedule.ot_date.asc()).all()
+
+    # จัดกลุ่มข้อมูลใหม่ ให้ "User" เป็นศูนย์กลาง
+    monthly_summary = {}
+    for resp, schedule, primary_name, sub_name in monthly_responses:
+        user_name = ""
+        
+        if resp.response_status == 'confirmed':
+            user_name = primary_name
+        elif resp.response_status == 'sub_confirmed':
+            user_name = sub_name # (ถ้า sub_name เป็น None แสดงว่ามีบางอย่างผิดพลาด)
+        
+        if user_name:
+            if user_name not in monthly_summary:
+                monthly_summary[user_name] = {'name': user_name, 'dates': []}
+            monthly_summary[user_name]['dates'].append(schedule.ot_date)
+    
+    # เรียงลำดับ (Sort) จากคนที่มา OT เยอะสุด
+    sorted_monthly_summary = sorted(monthly_summary.values(), key=lambda item: len(item['dates']), reverse=True)
+
+
+    # --- 3. Logic สรุปผลรายสัปดาห์ ---
+    weekly_responses = db.session.query(
+        OTResponse, OTSchedule, 
+        User.full_name.label('primary_name'),
+        User_sub.full_name.label('sub_name')
+    ).join(
+        OTSchedule, OTResponse.schedule_id == OTSchedule.id
+    ).join(
+        User, OTResponse.primary_user_id == User.id
+    ).outerjoin(
+        User_sub, OTResponse.delegated_to_user_id == User_sub.id
+    ).filter(
+        extract('year', OTSchedule.ot_date) == selected_year,
+        extract('week', OTSchedule.ot_date) == selected_week, # (ISO Week number)
+        OTResponse.response_status.in_(['confirmed', 'sub_confirmed'])
+    ).order_by(OTSchedule.ot_date.asc()).all()
+    
+    # จัดกลุ่มข้อมูลรายสัปดาห์
+    weekly_summary = {}
+    for resp, schedule, primary_name, sub_name in weekly_responses:
+        user_name = ""
+        if resp.response_status == 'confirmed':
+            user_name = primary_name
+        elif resp.response_status == 'sub_confirmed':
+            user_name = sub_name
+        
+        if user_name:
+            if user_name not in weekly_summary:
+                weekly_summary[user_name] = {'name': user_name, 'dates': []}
+            weekly_summary[user_name]['dates'].append(schedule.ot_date)
+    
+    sorted_weekly_summary = sorted(weekly_summary.values(), key=lambda item: len(item['dates']), reverse=True)
+
+
+    # --- 4. ส่งข้อมูลไปที่ Template ---
+    
+    # สร้าง List ปี (ย้อนหลัง) สำหรับ Dropdown
+    first_schedule = OTSchedule.query.order_by(OTSchedule.ot_date.asc()).first()
+    start_year = first_schedule.ot_date.year if first_schedule else current_year
+    available_years = list(range(start_year, current_year + 2)) # (เผื่ออนาคต 1 ปี)
+    
+    # สร้าง List เดือน สำหรับ Dropdown
+    month_names = [(i, calendar.month_name[i]) for i in range(1, 13)]
+    
+    # สร้าง String สัปดาห์ (เช่น "20/10 - 26/10/2025")
+    try:
+        # ใช้วันจันทร์ (1) เป็นวันเริ่มสัปดาห์
+        week_start = datetime.strptime(f'{selected_year}-W{selected_week}-1', "%Y-W%W-%w").date()
+        # ใช้วันอาทิตย์ (0) เป็นวันจบสัปดาห์
+        week_end = datetime.strptime(f'{selected_year}-W{selected_week}-0', "%Y-W%W-%w").date()
+        week_range_str = f"{week_start.strftime('%d/%m')} - {week_end.strftime('%d/%m/%Y')}"
+    except ValueError:
+        week_range_str = f"(สัปดาห์ที่ {selected_week})"
+
+
+    return render_template('reports.html',
+                           selected_year=selected_year,
+                           selected_month=selected_month,
+                           selected_week=selected_week,
+                           available_years=available_years,
+                           month_names=month_names,
+                           current_month_name=calendar.month_name[selected_month],
+                           week_range_str=week_range_str,
+                           sorted_monthly_summary=sorted_monthly_summary,
+                           sorted_weekly_summary=sorted_weekly_summary
+                          )
 
 @app.route('/admin')
 @login_required

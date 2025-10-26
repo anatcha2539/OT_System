@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card shadow-sm border-0">
+  <div class="card-header bg-white pb-0 border-0">
+    <h3 class="mb-0"><i class="bi bi-file-earmark-bar-graph"></i> รายงานสรุปผล OT (ย้อนหลัง)</h3>
+    <hr>
+  </div>
+  <div class="card-body">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="card mb-4">
+      <div class="card-header">
+        <i class="bi bi-filter"></i> ตัวกรองข้อมูล
+      </div>
+      <div class="card-body">
+        <form method="GET" action="{{ url_for('admin_reports') }}" class="row g-3">
+          <div class="col-md-4">
+            <label for="year" class="form-label">ปี (Year)</label>
+            <select name="year" id="year" class="form-select">
+              {% for year in available_years|reverse %}
+                <option value="{{ year }}" {% if year == selected_year %}selected{% endif %}>{{ year }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label for="month" class="form-label">เดือน (Month)</label>
+            <select name="month" id="month" class="form-select">
+              {% for month_num, month_name in month_names %}
+                <option value="{{ month_num }}" {% if month_num == selected_month %}selected{% endif %}>{{ month_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label for="week" class="form-label">สัปดาห์ที่ (Week No.)</label>
+            <input type="number" name="week" id="week" class="form-control" value="{{ selected_week }}">
+          </div>
+          <div class="col-12 text-end">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-search"></i> ค้นหา
+            </button>
+            <a href="{{ url_for('admin_reports') }}" class="btn btn-outline-secondary">
+              <i class="bi bi-calendar-event"></i> กลับไปที่สัปดาห์/เดือนปัจจุบัน
+            </a>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+          <div class="card-header bg-primary text-white">
+            <i class="bi bi-calendar-month"></i> สรุปผลรายเดือน ({{ current_month_name }} {{ selected_year }})
+          </div>
+          <div class="card-body">
+            {% if sorted_monthly_summary %}
+              <ul class="list-group list-group-flush">
+                {% for item in sorted_monthly_summary %}
+                  <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                      <strong>{{ item.name }}</strong>
+                      <br>
+                      <small class="text-muted">
+                        วันที่: 
+                        {% for dt in item.dates %}
+                          {{ dt.strftime('%d') }}{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                      </small>
+                    </div>
+                    <span class="badge bg-primary rounded-pill">{{ item.dates|length }} ครั้ง</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p class="text-center text-muted p-3">-- ไม่พบข้อมูล OT ที่ยืนยันแล้วในเดือนนี้ --</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+          <div class="card-header bg-success text-white">
+            <i class="bi bi-calendar-week"></i> สรุปผลรายสัปดาห์ ({{ week_range_str }})
+          </div>
+          <div class="card-body">
+            {% if sorted_weekly_summary %}
+              <ul class="list-group list-group-flush">
+                {% for item in sorted_weekly_summary %}
+                  <li class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                      <strong>{{ item.name }}</strong>
+                      <br>
+                      <small class="text-muted">
+                        วันที่: 
+                        {% for dt in item.dates %}
+                          {{ dt.strftime('%d/%m') }}{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                      </small>
+                    </div>
+                    <span class="badge bg-success rounded-pill">{{ item.dates|length }} ครั้ง</span>
+                  </li>
+                {% endfor %}
+              </ul>
+            {% else %}
+              <p class="text-center text-muted p-3">-- ไม่พบข้อมูล OT ที่ยืนยันแล้วในสัปดาห์นี้ --</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div> </div> </div> {% endblock %}
