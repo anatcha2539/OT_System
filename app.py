@@ -129,7 +129,7 @@ class User(db.Model, UserMixin): # (1. เพิ่ม UserMixin)
 
     def __repr__(self):
         return f'<User {self.full_name}>'
-    User_sub = db.aliased(User, name='user_sub')
+User_sub = db.aliased(User, name='user_sub')
 
 # (Class OTSchedule และ OTResponse เหมือนเดิม ไม่ต้องแก้)
 class OTSchedule(db.Model):
